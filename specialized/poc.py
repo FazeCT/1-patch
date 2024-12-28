@@ -1,10 +1,11 @@
 import lief # type: ignore
+import sys 
 
 # Define prefixes
 FIX_PREFIX = "fix_"
 
-patch_binary = lief.parse("patch")
-target_binary = lief.parse("target")
+patch_binary = lief.parse(sys.argv[1])
+target_binary = lief.parse(sys.argv[2])
 
 patch_data_section = patch_binary.get_section(".data")
 target_data_section = target_binary.get_section(".data")

@@ -3,6 +3,9 @@
 #include <filesystem>
 #include <fstream>
 
+#ifndef COMPILER_HPP
+#define COMPILER_HPP
+
 #include "utils.hpp"
 
 // Execute gcc compiler command
@@ -95,3 +98,5 @@ std::string compile(const std::string& input_path) {
         throw std::runtime_error("Compilation failed");
     }
 }
+
+#endif // COMPILER_HPP

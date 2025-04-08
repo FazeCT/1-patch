@@ -1,4 +1,6 @@
 #include <stdint.h> 
+#include <unistd.h>
+#include <string>
 #include <ctime>
 #include <cstdlib>
 #include <iomanip>
@@ -7,10 +9,268 @@
 
 #include <capstone/capstone.h>
 
-#include "object.hpp"
-
 #ifndef UTILS_HPP
 #define UTILS_HPP
+
+enum class SymbolType {
+    GlobalVariable,
+    Function,
+};
+
+enum class OperationType {
+    Add,
+    Fix,
+    Ref,
+    None,
+};
+
+struct GlobalVariableType {
+    std::string primitive;
+    uint8_t pointer_depth;
+    bool is_array;
+};
+
+class Node {
+    protected:
+        Node* left;
+        Node* right;
+
+    public:
+        Node() : left(nullptr), right(nullptr) {}
+        Node(Node* left, Node* right) : left(left), right(right) {}
+        virtual ~Node() {
+            delete left;
+            delete right;
+        }
+
+        Node* get_left() const { return left; }
+        Node* get_right() const { return right; }
+
+        void set_left(Node* node) { left = node; }
+        void set_right(Node* node) { right = node; }
+};
+
+class BinaryTree {
+    protected:
+        Node* root;
+
+    public:
+        BinaryTree() : root(nullptr) {}
+        virtual ~BinaryTree() {
+            delete root;
+            root = nullptr;
+        }
+};
+
+struct Reference {
+    uint64_t address;
+    SymbolType reference_type;
+    std::string instruction;
+    uint64_t reference_address;
+};
+
+class ReferenceNode : public Node {
+    private:
+        Reference* reference;
+
+    public:
+        ReferenceNode(Reference* reference) : Node(), reference(reference) {}
+        ~ReferenceNode() override {
+            delete reference;
+            reference = nullptr;
+        }
+        Reference* get_reference() const {
+            return reference;
+        }
+};
+
+class ReferenceTree : public BinaryTree {
+    public:
+        ReferenceTree() : BinaryTree() {}
+        ~ReferenceTree() override {}
+
+        void insert(ReferenceNode* node) {
+            if (root == nullptr) {
+                root = node;
+            } else {
+                insert(static_cast<ReferenceNode*>(root), node);
+            }
+        }
+
+        void insert(ReferenceNode* current, ReferenceNode* node) {
+            if (node->get_reference()->address < current->get_reference()->address) {
+                if (current->get_left() == nullptr) {
+                    current->set_left(node);
+                } else {
+                    insert(static_cast<ReferenceNode*>(current->get_left()), node);
+                }
+            } else {
+                if (current->get_right() == nullptr) {
+                    current->set_right(node);
+                } else {
+                    insert(static_cast<ReferenceNode*>(current->get_right()), node);
+                }
+            }
+        }
+
+        void traverse(ReferenceNode* node, std::vector<Reference*>& references) const {
+            if (node == nullptr) return;
+
+            traverse(static_cast<ReferenceNode*>(node->get_left()), references);
+            references.push_back(node->get_reference());
+            traverse(static_cast<ReferenceNode*>(node->get_right()), references);
+        }
+
+        std::vector<Reference*> get_references() const {
+            std::vector<Reference*> references;
+            if (root != nullptr) {
+                traverse(static_cast<ReferenceNode*>(root), references);
+            }
+            return references;
+        }
+};
+
+struct GlobalVar {
+    OperationType operation;
+    uint64_t patch_address;
+    uint64_t target_address;
+    std::string variable_name;
+    // GlobalVariableType variable_type;
+    std::vector<uint8_t> variable_value;
+    // uint64_t new_address;
+};
+
+class GlobalVarNode : public Node {
+    private:
+        GlobalVar* global_var;
+
+    public:
+        GlobalVarNode(GlobalVar* global_var) : Node(), global_var(global_var) {}
+        ~GlobalVarNode() override {
+            delete global_var;
+            global_var = nullptr;
+        }
+        GlobalVar* get_global_var() const {
+            return global_var;
+        }
+};
+
+class GlobalVarTree : public BinaryTree {
+    public:
+        GlobalVarTree() : BinaryTree() {}
+        ~GlobalVarTree() override {}
+
+        void insert(GlobalVarNode* node) {
+            if (root == nullptr) {
+                root = node;
+            } else {
+                insert(static_cast<GlobalVarNode*>(root), node);
+            }
+        }
+
+        void insert(GlobalVarNode* current, GlobalVarNode* node) {
+            if (node->get_global_var()->patch_address < current->get_global_var()->patch_address) {
+                if (current->get_left() == nullptr) {
+                    current->set_left(node);
+                } else {
+                    insert(static_cast<GlobalVarNode*>(current->get_left()), node);
+                }
+            } else {
+                if (current->get_right() == nullptr) {
+                    current->set_right(node);
+                } else {
+                    insert(static_cast<GlobalVarNode*>(current->get_right()), node);
+                }
+            }
+        }
+
+        void traverse(GlobalVarNode* node, std::vector<GlobalVar*>& global_vars) const {
+            if (node == nullptr) return;
+
+            traverse(static_cast<GlobalVarNode*>(node->get_left()), global_vars);
+            global_vars.push_back(node->get_global_var());
+            traverse(static_cast<GlobalVarNode*>(node->get_right()), global_vars);
+        }
+
+        std::vector<GlobalVar*> get_global_vars() const {
+            std::vector<GlobalVar*> global_vars;
+            if (root != nullptr) {
+                traverse(static_cast<GlobalVarNode*>(root), global_vars);
+            }
+            return global_vars;
+        }
+};
+
+struct Function {
+    OperationType operation;
+    uint64_t size;
+    uint64_t patch_address;
+    uint64_t target_address;
+    std::string function_name;
+    ReferenceTree reference_table;
+    uint64_t new_address;
+};
+
+class FunctionNode : public Node {
+    private:
+        Function* function;
+
+    public:
+        FunctionNode(Function* function) : Node(), function(function) {}
+        ~FunctionNode() override {
+            delete function;
+            function = nullptr;
+        }
+        Function* get_function() const {
+            return function;
+        }
+};
+
+class FunctionTree : public BinaryTree {
+    public:
+        FunctionTree() : BinaryTree() {}
+        ~FunctionTree() override {}
+
+        void insert(FunctionNode* node) {
+            if (root == nullptr) {
+                root = node;
+            } else {
+                insert(static_cast<FunctionNode*>(root), node);
+            }
+        }
+
+        void insert(FunctionNode* current, FunctionNode* node) {
+            if (node->get_function()->patch_address < current->get_function()->patch_address) {
+                if (current->get_left() == nullptr) {
+                    current->set_left(node);
+                } else {
+                    insert(static_cast<FunctionNode*>(current->get_left()), node);
+                }
+            } else {
+                if (current->get_right() == nullptr) {
+                    current->set_right(node);
+                } else {
+                    insert(static_cast<FunctionNode*>(current->get_right()), node);
+                }
+            }
+        }
+
+        void traverse(FunctionNode* node, std::vector<Function*>& functions) const {
+            if (node == nullptr) return;
+
+            traverse(static_cast<FunctionNode*>(node->get_left()), functions);
+            functions.push_back(node->get_function());
+            traverse(static_cast<FunctionNode*>(node->get_right()), functions);
+        }
+
+        std::vector<Function*> get_functions() const {
+            std::vector<Function*> functions;
+            if (root != nullptr) {
+                traverse(static_cast<FunctionNode*>(root), functions);
+            }
+            return functions;
+        }
+};
 
 // Convert hexadecimal to decimal
 uint64_t hex_to_decimal(const std::string& hex) {
@@ -42,9 +302,7 @@ std::string generate_random_string() {
 }
 
 // Extract global variables/functions references from a code section
-std::vector<Reference> extract_references(const std::vector<uint8_t>& code, uint64_t start_address) {
-    std::vector<Reference> references;
-
+void extract_references(const std::vector<uint8_t>& code, uint64_t start_address, ReferenceTree& reference_tree) {
     csh handle;
     cs_insn* insn;
     size_t count;
@@ -72,7 +330,11 @@ std::vector<Reference> extract_references(const std::vector<uint8_t>& code, uint
                         if (resolved_address >= start_address && resolved_address < start_address + code.size()) {
                             continue;
                         }
-                        references.push_back(Reference{instruction.address, SymbolType::Function, instruction.mnemonic, resolved_address});
+
+                        ReferenceNode* reference_node = new ReferenceNode(new Reference{
+                            instruction.address, SymbolType::Function, instruction.mnemonic, resolved_address
+                        });
+                        reference_tree.insert(reference_node);
                         break;
                     }
                 }
@@ -82,7 +344,12 @@ std::vector<Reference> extract_references(const std::vector<uint8_t>& code, uint
                         const cs_x86_op& op = detail->x86.operands[j];
                         if (op.type == X86_OP_MEM && op.mem.base == X86_REG_RIP) {
                             uint64_t resolved_address = instruction.address + instruction.size + op.mem.disp;
-                            references.push_back(Reference{instruction.address, SymbolType::GlobalVariable, instruction.mnemonic, resolved_address});
+
+                            ReferenceNode* reference_node = new ReferenceNode(new Reference{
+                                instruction.address, SymbolType::GlobalVariable, instruction.mnemonic, resolved_address
+                            });
+
+                            reference_tree.insert(reference_node);
                         }
                     }
                 }
@@ -94,7 +361,6 @@ std::vector<Reference> extract_references(const std::vector<uint8_t>& code, uint
     }
 
     cs_close(&handle);
-    return references;
 }
 
 #endif // UTILS_HPP

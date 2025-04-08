@@ -1,8 +1,49 @@
 #include <vector>
+#include <string>
+#include <sstream>
 
 #include <LIEF/LIEF.hpp>
 
-#include "binary_tree.hpp"
+#ifndef MERGER_HPP
+#define MERGER_HPP
+
+// Get shared libraries from the binary
+std::vector<std::string> get_shared_libraries(const std::string& binary_path) {
+    std::vector<std::string> libraries;
+
+    auto binary = LIEF::ELF::Parser::parse(binary_path);
+    if (!binary) {
+        std::cerr << "\033[1;31m[!]\033[0m Failed to parse binary: " << binary_path << "\033[0m\n";
+        return libraries;
+    }
+
+    auto dynamic_string_section = binary->get_section(".dynstr");
+    if (!dynamic_string_section) {
+        std::cerr << "\033[1;31m[!]\033[0m Failed to find .dynstr section in " << binary_path << "\033[0m\n";
+    }
+
+    std::vector<uint8_t> dynamic_strings(dynamic_string_section->content().begin(), dynamic_string_section->content().end());
+
+    for (const auto& entry : binary->dynamic_entries()) {
+        if (entry.tag() == LIEF::ELF::DynamicEntry::TAG::NEEDED) {
+            auto library_offset = entry.value();
+            if (library_offset < dynamic_strings.size()) {
+                std::string library_name;
+                for (size_t i = library_offset; i < dynamic_strings.size(); ++i) {
+                    if (dynamic_strings[i] == '\0') {
+                        break;
+                    }
+                    library_name += static_cast<char>(dynamic_strings[i]);
+                }
+                if (!library_name.empty()) {
+                    libraries.push_back(library_name);
+                }
+            }   
+        }
+    }
+
+    return libraries;
+}
 
 void merge_binary(const std::string& patch_binary_path, const std::string& target_binary_path, const std::string& output_binary_path,
                     GlobalVarTree& global_var_tree, FunctionTree& function_tree) {
@@ -30,6 +71,18 @@ void merge_binary(const std::string& patch_binary_path, const std::string& targe
         throw std::runtime_error("Merge failed");
     }
 
+    // Add libraries to the target binary
+    std::vector<std::string> patch_libraries = get_shared_libraries(patch_binary_path);
+
+    for (const auto& library : patch_libraries) {
+        try {
+            target_binary->add_library(library);
+            std::cout << "\033[1;32m[+]\033[0m Added " << library << " to target binary" << std::endl;
+        } catch (const std::exception& e) {
+            continue;
+        }
+    }
+    
     if (patch_binary->has_section(".rodata")) {
         auto rodata_section = patch_binary->get_section(".rodata");
         auto rodata_section_content = rodata_section->content();
@@ -96,6 +149,10 @@ void merge_binary(const std::string& patch_binary_path, const std::string& targe
             function->new_address += new_text_section_address;
         }
 
+        target_binary->write(output_binary_path);
+
         std::cout << "\033[1;32m[+]\033[0m Added .text to target binary at 0x" << std::hex << new_text_section_address << std::endl;
     }
 }
+
+#endif // MERGER_HPP

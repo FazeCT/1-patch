@@ -1,11 +1,14 @@
 #include <iostream>
 #include <string>
 
+#include "utils.hpp"
 #include "compiler.hpp"
 #include "patch_parser.hpp"
+#include "target_parser.hpp"
 #include "merger.hpp"
+#include "relocator.hpp"
 
-// Print helps
+// Print help
 void print_help() {
     std::cout << "\n\033[1;32m1-PATCH [v0.1.0]\033[0m\n";
     std::cout << "\033[1;32m----------------\033[0m\n";
@@ -74,6 +77,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Contains global variables and functions in patch binary
     GlobalVarTree global_var_tree;
     FunctionTree function_tree;
 
@@ -84,13 +88,35 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Contains references within the target binary
+    ReferenceTree reference_tree;
+
     try {
-        merge_binary(patch_binary_path, target_binary_path, output_binary_path, global_var_tree, function_tree);
-        std::filesystem::remove(patch_binary_path);
+        parse_target_binary(target_binary_path, reference_tree);
     } catch (const std::runtime_error& e) {
         std::cerr << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << "\033[0m\n";
         return 1;
     }
+
+    if (output_binary_path.empty()) {
+        output_binary_path = target_binary_path + "_patched";
+    }
+
+    try {
+        merge_binary(patch_binary_path, target_binary_path, output_binary_path, global_var_tree, function_tree);
+    } catch (const std::runtime_error& e) {
+        std::cerr << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << "\033[0m\n";
+        return 1;
+    }
+
+    try {
+        relocate(patch_binary_path, target_binary_path, output_binary_path, global_var_tree, function_tree);
+    } catch (const std::runtime_error& e) {
+        std::cerr << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << "\033[0m\n";
+        return 1;
+    }
+
+    std::filesystem::remove(patch_binary_path);
 
     std::cout << "\033[1;32m[+]\033[0m Done." << std::endl;
 

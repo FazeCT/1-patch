@@ -8,8 +8,8 @@
 #include <libdwarf/dwarf.h>
 #include <libdwarf/libdwarf.h>
 
-#include "object.hpp"
-#include "binary_tree.hpp"
+#ifndef PATCH_PARSER_HPP
+#define PATCH_PARSER_HPP
 
 // Parse the patch binary, extract global variables and functions
 void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& global_var_tree, FunctionTree& function_tree) {
@@ -18,7 +18,7 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
 
     if (!patch_binary) {
         std::cerr << "\033[1;31m[!]\033[0m Failed to parse patch binary: " << patch_binary_path << "\033[0m\n";
-        throw std::runtime_error("Failed to parse patch binary");
+        throw std::runtime_error("Patch parser failed");
     }
     
     for (const auto& symbol : patch_binary->symbols()) {
@@ -70,7 +70,8 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
             auto function_code = patch_binary->get_content_from_virtual_address(patch_address, symbol.size());
 
             // Get all references of the function
-            auto reference_table = extract_references(std::vector<uint8_t>(function_code.begin(), function_code.end()), patch_address);
+            ReferenceTree reference_table;
+            extract_references(std::vector<uint8_t>(function_code.begin(), function_code.end()), patch_address, reference_table);
 
             FunctionNode* function_node = new FunctionNode(new Function{
                 operation, 
@@ -83,6 +84,15 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
             });
 
             function_tree.insert(function_node);
+
+            // Insert .plt functions
+            for (auto& reference : reference_table.get_references()) {
+                if (reference->reference_type == SymbolType::Function) {
+                    std::cout << "[-] Found reference to function: 0x" << std::hex << reference->reference_address << std::endl;
+                    auto plt_sec = patch_binary->section_from_virtual_address(reference->reference_address);
+                    // to-do
+                }
+            }
         }
 
         else {
@@ -90,3 +100,5 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
         }
     }
 }
+
+#endif // PATCH_PARSER_HPP

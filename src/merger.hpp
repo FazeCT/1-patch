@@ -75,11 +75,13 @@ void merge_binary(const std::string& patch_binary_path, const std::string& targe
     std::vector<std::string> patch_libraries = get_shared_libraries(patch_binary_path);
 
     for (const auto& library : patch_libraries) {
-        try {
-            target_binary->add_library(library);
-            std::cout << "\033[1;32m[+]\033[0m Added " << library << " to target binary" << std::endl;
-        } catch (const std::exception& e) {
-            continue;
+        if (!target_binary->has_library(library)) {
+            try {
+                target_binary->add_library(library);
+                std::cout << "\033[1;32m[+]\033[0m Added " << library << " to target binary" << std::endl;
+            } catch (const std::exception& e) {
+                continue;
+            }
         }
     }
     

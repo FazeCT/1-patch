@@ -321,25 +321,38 @@ void extract_references(const std::vector<uint8_t>& code, uint64_t start_address
             const cs_detail* detail = instruction.detail;
 
             if (detail) {
-                bool control_flow_instruction = false;
+                bool control_flow_instruction = cs_insn_group(handle, &instruction, CS_GRP_JUMP) || cs_insn_group(handle, &instruction, CS_GRP_CALL);
 
-                for (size_t j = 0; j < detail->groups_count; j++) {
-                    if (detail->groups[j] == CS_GRP_JUMP || detail->groups[j] == CS_GRP_CALL) {
-                        control_flow_instruction = true;
-                        uint64_t resolved_address = std::stoull(instruction.op_str, nullptr, 16);
-                        if (resolved_address >= start_address && resolved_address < start_address + code.size()) {
-                            continue;
-                        }
+                if (control_flow_instruction) {
+                    uint64_t resolved_address;
 
-                        ReferenceNode* reference_node = new ReferenceNode(new Reference{
-                            instruction.address, SymbolType::Function, instruction.mnemonic, resolved_address
-                        });
-                        reference_tree.insert(reference_node);
-                        break;
+                    switch (detail->x86.operands[0].type) {
+                        case X86_OP_IMM:
+                            resolved_address = std::stoull(instruction.op_str, nullptr, 16);
+                        case X86_OP_REG:
+                            break;
+                        case X86_OP_MEM:
+                            if (detail->x86.operands[0].mem.base == X86_REG_RIP) {
+                                resolved_address = instruction.address + instruction.size + detail->x86.operands[0].mem.disp;
+                            } else {
+                                break;
+                            }
+                        default:
+                            break;
                     }
+
+                    if (resolved_address >= start_address && resolved_address < start_address + code.size()) {
+                        continue;
+                    }
+
+                    ReferenceNode* reference_node = new ReferenceNode(new Reference{
+                        instruction.address, SymbolType::Function, instruction.mnemonic, resolved_address
+                    });
+
+                    reference_tree.insert(reference_node);
                 }
 
-                if (!control_flow_instruction) {
+                else {
                     for (size_t j = 0; j < detail->x86.op_count; j++) {
                         const cs_x86_op& op = detail->x86.operands[j];
                         if (op.type == X86_OP_MEM && op.mem.base == X86_REG_RIP) {

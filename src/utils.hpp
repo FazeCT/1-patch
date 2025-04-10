@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <capstone/capstone.h>
+#include <keystone/keystone.h>
 
 #ifndef UTILS_HPP
 #define UTILS_HPP
@@ -64,8 +65,8 @@ class BinaryTree {
 
 struct Reference {
     uint64_t address;
+    uint64_t size;
     SymbolType reference_type;
-    std::string instruction;
     uint64_t reference_address;
 };
 
@@ -128,13 +129,26 @@ class ReferenceTree : public BinaryTree {
             }
             return references;
         }
+
+        Reference* find_reference(uint64_t address) const {
+            ReferenceNode* current = static_cast<ReferenceNode*>(root);
+            while (current != nullptr) {
+                if (current->get_reference()->address == address) {
+                    return current->get_reference();
+                } else if (address < current->get_reference()->address) {
+                    current = static_cast<ReferenceNode*>(current->get_left());
+                } else {
+                    current = static_cast<ReferenceNode*>(current->get_right());
+                }
+            }
+            return nullptr;
+        }
 };
 
 struct GlobalVar {
     OperationType operation;
     uint64_t patch_address;
     uint64_t target_address;
-    std::string variable_name;
     // GlobalVariableType variable_type;
     std::vector<uint8_t> variable_value;
     // uint64_t new_address;
@@ -199,6 +213,20 @@ class GlobalVarTree : public BinaryTree {
             }
             return global_vars;
         }
+
+        GlobalVar* find_global_var(uint64_t address) const {
+            GlobalVarNode* current = static_cast<GlobalVarNode*>(root);
+            while (current != nullptr) {
+                if (current->get_global_var()->patch_address == address) {
+                    return current->get_global_var();
+                } else if (address < current->get_global_var()->patch_address) {
+                    current = static_cast<GlobalVarNode*>(current->get_left());
+                } else {
+                    current = static_cast<GlobalVarNode*>(current->get_right());
+                }
+            }
+            return nullptr;
+        }
 };
 
 struct Function {
@@ -206,8 +234,7 @@ struct Function {
     uint64_t size;
     uint64_t patch_address;
     uint64_t target_address;
-    std::string function_name;
-    ReferenceTree reference_table;
+    std::unique_ptr<ReferenceTree> reference_table;
     uint64_t new_address;
 };
 
@@ -270,11 +297,31 @@ class FunctionTree : public BinaryTree {
             }
             return functions;
         }
+
+        Function* find_function(uint64_t address) const {
+            FunctionNode* current = static_cast<FunctionNode*>(root);
+            while (current != nullptr) {
+                if (current->get_function()->patch_address == address) {
+                    return current->get_function();
+                } else if (address < current->get_function()->patch_address) {
+                    current = static_cast<FunctionNode*>(current->get_left());
+                } else {
+                    current = static_cast<FunctionNode*>(current->get_right());
+                }
+            }
+            return nullptr;
+        }
 };
 
 // Convert hexadecimal to decimal
 uint64_t hex_to_decimal(const std::string& hex) {
     return std::stoull(hex, nullptr, 16);
+}
+
+std::string decimal_to_hex(uint64_t decimal) {
+    std::stringstream ss;
+    ss << std::hex << decimal;
+    return "0x" + ss.str();
 }
 
 // Calculate FNV-1a hash
@@ -346,7 +393,7 @@ void extract_references(const std::vector<uint8_t>& code, uint64_t start_address
                     }
 
                     ReferenceNode* reference_node = new ReferenceNode(new Reference{
-                        instruction.address, SymbolType::Function, instruction.mnemonic, resolved_address
+                        instruction.address, instruction.size, SymbolType::Function, resolved_address
                     });
 
                     reference_tree.insert(reference_node);
@@ -359,7 +406,7 @@ void extract_references(const std::vector<uint8_t>& code, uint64_t start_address
                             uint64_t resolved_address = instruction.address + instruction.size + op.mem.disp;
 
                             ReferenceNode* reference_node = new ReferenceNode(new Reference{
-                                instruction.address, SymbolType::GlobalVariable, instruction.mnemonic, resolved_address
+                                instruction.address, instruction.size, SymbolType::GlobalVariable, resolved_address
                             });
 
                             reference_tree.insert(reference_node);
@@ -374,6 +421,30 @@ void extract_references(const std::vector<uint8_t>& code, uint64_t start_address
     }
 
     cs_close(&handle);
+}
+
+std::vector<uint8_t> assemble_instruction(const std::string& instruction) {
+    ks_engine *ks;
+    ks_err err;
+
+    if (ks_open(KS_ARCH_X86, KS_MODE_64, &ks) != KS_ERR_OK) {
+        throw std::runtime_error("Failed to initialize Keystone");
+    }
+
+    size_t size;
+    size_t count_ks;
+    unsigned char *encode;
+
+    if (ks_asm(ks, instruction.c_str(), 0, &encode, &size, &count_ks) != KS_ERR_OK) {
+        ks_free(encode);
+        ks_close(ks);
+        throw std::runtime_error("Failed to assemble instruction");
+    } else {
+        std::vector<uint8_t> assembled_code(encode, encode + size);
+        ks_free(encode);
+        ks_close(ks);
+        return assembled_code;
+    }
 }
 
 #endif // UTILS_HPP

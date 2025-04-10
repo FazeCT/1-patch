@@ -10,6 +10,7 @@ find_package(LIEF REQUIRED)
 
 target_include_directories(thesis PRIVATE /usr/include/capstone)
 target_include_directories(thesis PRIVATE /usr/include/libdwarf)
+target_include_directories(thesis PRIVATE /usr/include/keystone)
 
 target_link_libraries(thesis PRIVATE 
     LIEF::LIEF 
@@ -17,4 +18,5 @@ target_link_libraries(thesis PRIVATE
     /usr/lib/x86_64-linux-gnu/libdwarf.a 
     /usr/lib/x86_64-linux-gnu/libz.so 
     /usr/lib/x86_64-linux-gnu/libelf.so
+    /usr/lib/x86_64-linux-gnu/libkeystone.so
 )

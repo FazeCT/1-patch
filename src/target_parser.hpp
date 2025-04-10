@@ -35,10 +35,6 @@ void parse_target_binary(const std::string& target_binary_path, ReferenceTree& r
             extract_references(code, start_address, reference_tree);
         }
     }
-
-    for (auto &reference : reference_tree.get_references()) {
-        std::cout << "\033[1;32m[+]\033[0m Found reference: 0x" << std::hex << reference->address << "\n";
-    }
 }
 
 #endif // TARGET_PARSER_HPP

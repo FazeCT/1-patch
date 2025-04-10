@@ -47,10 +47,10 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
                 target_address = hex_to_decimal(symbol_name.substr(4));
             } catch (...) {
                 std::cerr << "[-] Target address for " << symbol_name << " cannot be resolved" << std::endl;
+                continue;
             }
         }
 
-        // Check if the symbol is a global variable or function
         if (symbol.is_variable()) {
             auto variable_value = patch_binary->get_content_from_virtual_address(patch_address, symbol.size());
 
@@ -58,7 +58,6 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
                 operation, 
                 patch_address, 
                 target_address, 
-                symbol_name.substr(4), 
                 // nullptr, 
                 std::vector<uint8_t>(variable_value.begin(), variable_value.end()),
             });
@@ -70,23 +69,22 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
             auto function_code = patch_binary->get_content_from_virtual_address(patch_address, symbol.size());
 
             // Get all references of the function
-            ReferenceTree reference_table;
-            extract_references(std::vector<uint8_t>(function_code.begin(), function_code.end()), patch_address, reference_table);
+            std::unique_ptr<ReferenceTree> reference_table = std::make_unique<ReferenceTree>();
+            extract_references(std::vector<uint8_t>(function_code.begin(), function_code.end()), patch_address, *reference_table);
 
             FunctionNode* function_node = new FunctionNode(new Function{
                 operation, 
                 symbol.size(), 
                 patch_address, 
                 target_address, 
-                symbol_name.substr(4), 
-                reference_table,
+                std::move(reference_table),
                 UINT64_MAX,
             });
 
             function_tree.insert(function_node);
 
             // Insert .plt functions
-            for (auto& reference : reference_table.get_references()) {
+            for (auto& reference : function_node->get_function()->reference_table->get_references()) {
                 if (reference->reference_type == SymbolType::Function) {
                     std::cout << "[-] Found reference to function: 0x" << std::hex << reference->reference_address << std::endl;
                     auto plt_sec = patch_binary->section_from_virtual_address(reference->reference_address);

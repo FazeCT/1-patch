@@ -443,6 +443,9 @@ std::vector<uint8_t> assemble_instruction(const std::string& instruction) {
         std::vector<uint8_t> assembled_code(encode, encode + size);
         ks_free(encode);
         ks_close(ks);
+        if (assembled_code.empty()) {
+            throw std::runtime_error("Failed to assemble instruction");
+        }
         return assembled_code;
     }
 }

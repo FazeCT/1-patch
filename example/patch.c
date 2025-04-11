@@ -1,10 +1,19 @@
 #include <stdio.h>
 
-volatile int ref_0x4014;
-volatile int fix_0x4010 = 3000;
+volatile int add_lmao() {
+    return 6969696;
+}
+volatile int fix_0x4808E0() {
+    int a, b;
 
-volatile int fix_0x1149() {
-    return ref_0x4014;
+    asm volatile (
+        "movl %%eax, %0\n\t" // Move the value in rax (eax for 32-bit) to variable a
+        "movl %%ebx, %1\n\t" // Move the value in rbx (ebx for 32-bit) to variable b
+        : "=r" (a), "=r" (b) // Output operands
+        :                    // No input operands
+        : "eax", "ebx"       // Clobbered registers
+    );
+    return add_lmao() + a + b;
 }
 
 int main() {}

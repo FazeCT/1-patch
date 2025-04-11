@@ -86,45 +86,87 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                 else if (reference->reference_type == SymbolType::Function) {
                     auto ref_function = function_tree.find_function(reference->reference_address);
                     if (ref_function) {
-                        cs_insn* insn = nullptr;
-                        auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
-                        std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
+                        if (ref_function->operation == OperationType::Ref) {
+                            cs_insn* insn = nullptr;
+                            auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
+                            std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
 
-                        size_t count = cs_disasm(handle, instruction_bytes.data(), instruction_bytes.size(), reference->address, 0, &insn);
-                        if (count > 0) {
-                            const cs_detail* detail = insn[0].detail;
-                            cs_insn& instruction = insn[0];
-                            if (detail) {
-                                uint64_t instruction_address = reference->address - function->patch_address + function->new_address;
-                                std::string new_instruction;
+                            size_t count = cs_disasm(handle, instruction_bytes.data(), instruction_bytes.size(), reference->address, 0, &insn);
+                            if (count > 0) {
+                                const cs_detail* detail = insn[0].detail;
+                                cs_insn& instruction = insn[0];
+                                if (detail) {
+                                    uint64_t instruction_address = reference->address - function->patch_address + function->new_address;
+                                    std::string new_instruction;
 
-                                if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
-                                    uint64_t new_disp = ref_function->target_address + entrypoint_difference - instruction_address - instruction.size;
-                                    uint64_t old_disp = detail->x86.operands[0].mem.disp;
+                                    if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
+                                        uint64_t new_disp = ref_function->target_address + entrypoint_difference - instruction_address - instruction.size;
+                                        uint64_t old_disp = detail->x86.operands[0].mem.disp;
 
-                                    new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
-                            
-                                    size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                                    if (disp_pos != std::string::npos) {
-                                        new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
+                                        new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
+                                
+                                        size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
+                                        if (disp_pos != std::string::npos) {
+                                            new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
+                                        }
+                                    }
+
+                                    else if (detail->x86.operands[0].type == X86_OP_IMM) {
+                                        uint64_t new_disp = ref_function->target_address + entrypoint_difference - instruction_address;
+                                        new_instruction = std::string(instruction.mnemonic) + " " + decimal_to_hex(new_disp);  
+                                    }
+
+                                    try {
+                                        std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);
+                                        output_binary->patch_address(instruction_address, new_instruction_bytes);
+                                    } catch (const std::exception& e) {
+                                        throw std::runtime_error("Relocator failed");
                                     }
                                 }
+                            }
+                            cs_free(insn, count);
+                        }
 
-                                else if (detail->x86.operands[0].type == X86_OP_IMM) {
-                                    uint64_t new_call_address = ref_function->target_address + entrypoint_difference;
-                                    new_instruction = std::string(instruction.mnemonic) + " " + decimal_to_hex(new_call_address);
-                                }
+                        else if (ref_function->operation == OperationType::Add) {
+                            cs_insn* insn = nullptr;
+                            auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
+                            std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
 
-                                try {
-                                    std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);
-                                    output_binary->patch_address(instruction_address, new_instruction_bytes);
-                                } catch (const std::exception& e) {
-                                    throw std::runtime_error("Relocator failed");
+                            size_t count = cs_disasm(handle, instruction_bytes.data(), instruction_bytes.size(), reference->address, 0, &insn);
+                            if (count > 0) {
+                                const cs_detail* detail = insn[0].detail;
+                                cs_insn& instruction = insn[0];
+                                if (detail) {
+                                    uint64_t instruction_address = reference->address - function->patch_address + function->new_address;
+                                    std::string new_instruction;
+
+                                    if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
+                                        uint64_t new_disp = ref_function->new_address - instruction_address - instruction.size;
+                                        uint64_t old_disp = detail->x86.operands[0].mem.disp;
+
+                                        new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
+                                
+                                        size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
+                                        if (disp_pos != std::string::npos) {
+                                            new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
+                                        }
+                                    }
+
+                                    else if (detail->x86.operands[0].type == X86_OP_IMM) {
+                                        uint64_t new_disp = ref_function->new_address - instruction_address;
+                                        new_instruction = std::string(instruction.mnemonic) + " " + decimal_to_hex(new_disp);  
+                                    }
+
+                                    try {
+                                        std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);
+                                        output_binary->patch_address(instruction_address, new_instruction_bytes);
+                                    } catch (const std::exception& e) {
+                                        throw std::runtime_error("Relocator failed");
+                                    }
                                 }
                             }
+                            cs_free(insn, count);
                         }
-                        cs_free(insn, count);
-
                     } else {
                         throw std::runtime_error("Relocator failed");
                     }
@@ -132,16 +174,16 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
             }
         }
 
-        // Replace original functions with fix_ patched functions
+        // Replace original functions with fix_ patched functions (install hook to new function)
         if (function->operation == OperationType::Fix) {
             auto new_target_address = function->target_address + entrypoint_difference;
-            auto new_mem_disp = function->new_address - new_target_address - 6;
             
-            std::string new_instruction = "call qword ptr [rip + " + decimal_to_hex(new_mem_disp) + "]; ret";
-            std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);
+            std::string new_instruction = "jmp " + decimal_to_hex(function->new_address - new_target_address);
+
+            std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);                  
 
             output_binary->patch_address(new_target_address, new_instruction_bytes);
-        }
+        }        
     }
     
     cs_close(&handle);

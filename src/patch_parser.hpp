@@ -86,7 +86,7 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
             // Insert .plt functions
             for (auto& reference : function_node->get_function()->reference_table->get_references()) {
                 if (reference->reference_type == SymbolType::Function) {
-                    std::cout << "[-] Found reference to function: 0x" << std::hex << reference->reference_address << std::endl;
+                    // std::cout << "[-] Found reference to function: 0x" << std::hex << reference->reference_address << std::endl;
                     auto plt_sec = patch_binary->section_from_virtual_address(reference->reference_address);
                     // to-do
                 }

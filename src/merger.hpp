@@ -155,6 +155,16 @@ void merge_binary(const std::string& patch_binary_path, const std::string& targe
 
         std::cout << "\033[1;32m[+]\033[0m Added .text to target binary at 0x" << std::hex << new_text_section_address << std::endl;
     }
+    
+    // Find new address of global variables
+    for (auto& global_var : global_var_tree.get_global_vars()) {
+        auto assoc_section = patch_binary->section_from_virtual_address(global_var->patch_address);
+        
+        uint64_t offset_in_section = global_var->patch_address - assoc_section->virtual_address();
+        uint64_t new_address = target_binary->get_section(assoc_section->name() + "." + random_string)->virtual_address() + offset_in_section;
+
+        global_var->new_address = new_address;
+    }
 }
 
 #endif // MERGER_HPP

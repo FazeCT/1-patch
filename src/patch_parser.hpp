@@ -60,6 +60,7 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
                 target_address, 
                 // nullptr, 
                 std::vector<uint8_t>(variable_value.begin(), variable_value.end()),
+                UINT64_MAX,
             });
 
             global_var_tree.insert(global_var_node);

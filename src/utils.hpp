@@ -151,7 +151,7 @@ struct GlobalVar {
     uint64_t target_address;
     // GlobalVariableType variable_type;
     std::vector<uint8_t> variable_value;
-    // uint64_t new_address;
+    uint64_t new_address;
 };
 
 class GlobalVarNode : public Node {

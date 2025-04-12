@@ -1,19 +1,21 @@
 #include <stdio.h>
 
+volatile int add_GLOBAL_VAR = 3969;
+
 volatile int add_lmao() {
-    return 6969696;
+    return add_GLOBAL_VAR;
 }
 volatile int fix_0x4808E0() {
     int a, b;
 
     asm volatile (
-        "movl %%eax, %0\n\t" // Move the value in rax (eax for 32-bit) to variable a
-        "movl %%ebx, %1\n\t" // Move the value in rbx (ebx for 32-bit) to variable b
-        : "=r" (a), "=r" (b) // Output operands
-        :                    // No input operands
-        : "eax", "ebx"       // Clobbered registers
+        "movl %%eax, %0\n\t" 
+        "movl %%ebx, %1\n\t" 
+        : "=r" (a), "=r" (b) 
+        :                    
+        : "eax", "ebx"       
     );
-    return add_lmao() + a + b;
+    return add_lmao() + a - b;
 }
 
 int main() {}

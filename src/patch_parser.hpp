@@ -52,18 +52,42 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
         }
 
         if (symbol.is_variable()) {
-            auto variable_value = patch_binary->get_content_from_virtual_address(patch_address, symbol.size());
+            DWARFResolver resolver(patch_binary_path);
+
+            GlobalVariableType variable_type = resolver.resolve(symbol_name);
+            uint64_t variable_size = symbol.size() / variable_type.element_count;
 
             GlobalVarNode* global_var_node = new GlobalVarNode(new GlobalVar{
                 operation, 
+                variable_size,
                 patch_address, 
                 target_address, 
-                // nullptr, 
-                std::vector<uint8_t>(variable_value.begin(), variable_value.end()),
+                variable_type,
                 UINT64_MAX,
             });
 
             global_var_tree.insert(global_var_node);
+
+            // Also insert all elements of the array
+            for (int i = 1; i < variable_type.element_count; ++i) {
+                GlobalVariableType element_type;
+
+                element_type.primitive = variable_type.primitive;
+                element_type.pointer_depth = variable_type.pointer_depth;
+                element_type.is_array = false;
+                element_type.element_count = 1;
+
+                GlobalVarNode* global_var_node_element = new GlobalVarNode(new GlobalVar{
+                    operation, 
+                    variable_size,
+                    patch_address + i * variable_size, 
+                    target_address + i * variable_size, 
+                    element_type,
+                    UINT64_MAX,
+                });
+
+                global_var_tree.insert(global_var_node_element);
+            }
         }
 
         else if (symbol.is_function()) {

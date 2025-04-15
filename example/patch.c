@@ -1,21 +1,15 @@
 #include <stdio.h>
 
-volatile int add_GLOBAL_VAR = 3969;
+int add_array[][3] = {
+    {1, 2, 3},
+    {4, 5, 6},
+    {7, 8, 9}
+};
 
-volatile int add_lmao() {
-    return add_GLOBAL_VAR;
-}
-volatile int fix_0x4808E0() {
-    int a, b;
+volatile int fix_0x4010 = 6969;
 
-    asm volatile (
-        "movl %%eax, %0\n\t" 
-        "movl %%ebx, %1\n\t" 
-        : "=r" (a), "=r" (b) 
-        :                    
-        : "eax", "ebx"       
-    );
-    return add_lmao() + a - b;
+volatile int fix_0x1183(int a, int b) {
+    return add_array[0][2] * fix_0x4010;
 }
 
 int main() {}

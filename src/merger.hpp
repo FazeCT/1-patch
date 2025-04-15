@@ -45,7 +45,7 @@ std::vector<std::string> get_shared_libraries(const std::string& binary_path) {
     return libraries;
 }
 
-void merge_binary(const std::string& patch_binary_path, const std::string& target_binary_path, const std::string& output_binary_path,
+std::string merge_binary(const std::string& patch_binary_path, const std::string& target_binary_path, const std::string& output_binary_path,
                     GlobalVarTree& global_var_tree, FunctionTree& function_tree) {
 
     std::string random_string = generate_random_string();
@@ -165,6 +165,8 @@ void merge_binary(const std::string& patch_binary_path, const std::string& targe
 
         global_var->new_address = new_address;
     }
+
+    return random_string;
 }
 
 #endif // MERGER_HPP

@@ -103,15 +103,17 @@ int main(int argc, char* argv[]) {
         output_binary_path = target_binary_path + "_patched";
     }
 
+    std::string new_section_indicator;
+
     try {
-        merge_binary(patch_binary_path, target_binary_path, output_binary_path, global_var_tree, function_tree);
+        new_section_indicator = merge_binary(patch_binary_path, target_binary_path, output_binary_path, global_var_tree, function_tree);
     } catch (const std::runtime_error& e) {
         std::cerr << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << "\033[0m\n";
         return 1;
     }
 
     try {
-        relocate(patch_binary_path, target_binary_path, output_binary_path, global_var_tree, function_tree);
+        relocate(patch_binary_path, target_binary_path, output_binary_path, global_var_tree, function_tree, new_section_indicator);
     } catch (const std::runtime_error& e) {
         std::cerr << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << "\033[0m\n";
         return 1;

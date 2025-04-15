@@ -6,6 +6,11 @@
 #include <iomanip>
 #include <sstream>
 #include <vector>
+#include <iostream>
+#include <stdexcept>
+#include <dwarf.h>
+#include <libdwarf.h>
+#include <fcntl.h>
 
 #include <capstone/capstone.h>
 #include <keystone/keystone.h>
@@ -27,8 +32,9 @@ enum class OperationType {
 
 struct GlobalVariableType {
     std::string primitive;
-    uint8_t pointer_depth;
-    bool is_array;
+    uint8_t pointer_depth = 0;
+    bool is_array = false;
+    uint64_t element_count = 1;
 };
 
 class Node {
@@ -147,10 +153,10 @@ class ReferenceTree : public BinaryTree {
 
 struct GlobalVar {
     OperationType operation;
+    uint64_t size;
     uint64_t patch_address;
     uint64_t target_address;
-    // GlobalVariableType variable_type;
-    std::vector<uint8_t> variable_value;
+    GlobalVariableType variable_type;
     uint64_t new_address;
 };
 
@@ -318,10 +324,35 @@ uint64_t hex_to_decimal(const std::string& hex) {
     return std::stoull(hex, nullptr, 16);
 }
 
+// Convert decimal to hexadecimal
 std::string decimal_to_hex(uint64_t decimal) {
     std::stringstream ss;
     ss << std::hex << decimal;
     return "0x" + ss.str();
+}
+
+// Convert vector to little-endian integer
+uint64_t vector_to_int(const std::vector<uint8_t>& data) {
+    if (data.empty()) {
+        throw std::invalid_argument("Input vector is empty");
+    }
+
+    uint64_t result = 0;
+    for (size_t i = 0; i < data.size(); ++i) {
+        result |= static_cast<uint64_t>(data[i]) << (i * 8);
+    }
+
+    return result;
+}
+
+// Convert little-endian integer to vector 
+std::vector<uint8_t> int_to_vector(uint64_t decimal) {
+    std::vector<uint8_t> result;
+    for (size_t i = 0; i < sizeof(uint64_t); ++i) {
+        result.push_back(static_cast<uint8_t>(decimal & 0xFF)); // Extract the least significant byte
+        decimal >>= 8;
+    }
+    return result;
 }
 
 // Calculate FNV-1a hash
@@ -450,4 +481,183 @@ std::vector<uint8_t> assemble_instruction(const std::string& instruction) {
     }
 }
 
+class DWARFResolver {
+public:
+    DWARFResolver(const std::string& path) {
+        fd = open(path.c_str(), O_RDONLY);
+        if (fd < 0) throw std::runtime_error("Failed to open binary");
+
+        if (dwarf_init(fd, DW_DLC_READ, nullptr, nullptr, &dbg, &err) != DW_DLV_OK) {
+            throw std::runtime_error("Failed to init DWARF");
+        }
+    }
+
+    ~DWARFResolver() {
+        dwarf_finish(dbg, &err);
+        close(fd);
+    }
+
+    GlobalVariableType resolve(const std::string& var_name) {
+        // Reset DWARF state before resolving a new symbol
+        reset_state();
+
+        GlobalVariableType result;
+
+        Dwarf_Unsigned cu_header_length, abbrev_offset, next_cu_header;
+        Dwarf_Half version_stamp, address_size;
+        Dwarf_Die cu_die = 0;
+
+        while (dwarf_next_cu_header(dbg, &cu_header_length, &version_stamp,
+                                     &abbrev_offset, &address_size, &next_cu_header, &err) == DW_DLV_OK) {
+
+            if (dwarf_siblingof(dbg, nullptr, &cu_die, &err) != DW_DLV_OK) continue;
+
+            if (find_variable_recursive(cu_die, var_name, result)) {
+                return result;
+            }
+        }
+
+        throw std::runtime_error("Variable with name '" + var_name + "' not found.");
+    }
+
+private:
+    int fd;
+    Dwarf_Debug dbg;
+    Dwarf_Error err;
+
+    void reset_state() {
+        // Reset any necessary internal states for a new resolve
+        if (dbg) {
+            dwarf_finish(dbg, &err); // Finish the previous session
+        }
+
+        // Reinitialize
+        if (dwarf_init(fd, DW_DLC_READ, nullptr, nullptr, &dbg, &err) != DW_DLV_OK) {
+            throw std::runtime_error("Failed to reinitialize DWARF");
+        }
+    }
+
+    bool find_variable_recursive(Dwarf_Die die, const std::string& var_name, GlobalVariableType& out) {
+        char* name = nullptr;
+        if (dwarf_diename(die, &name, &err) == DW_DLV_OK && name) {
+            if (var_name == std::string(name)) {
+                Dwarf_Attribute attr;
+                if (dwarf_attr(die, DW_AT_type, &attr, &err) == DW_DLV_OK) {
+                    resolve_type(attr, out);
+                    return true;
+                }
+            }
+        }
+
+        // Recurse children
+        Dwarf_Die child;
+        if (dwarf_child(die, &child, &err) == DW_DLV_OK) {
+            if (find_variable_recursive(child, var_name, out)) return true;
+        }
+
+        // Recurse siblings
+        Dwarf_Die sibling = die;
+        while (dwarf_siblingof(dbg, sibling, &sibling, &err) == DW_DLV_OK) {
+            if (find_variable_recursive(sibling, var_name, out)) return true;
+        }
+
+        return false;
+    }
+
+    bool extract_array_size(Dwarf_Die subrange_die, uint64_t& count) {
+        Dwarf_Attribute attr;
+        Dwarf_Unsigned uvalue;
+        Dwarf_Signed svalue;
+        Dwarf_Half form;
+
+        // DW_AT_count
+        if (dwarf_attr(subrange_die, DW_AT_count, &attr, &err) == DW_DLV_OK) {
+            if (dwarf_formudata(attr, &uvalue, &err) == DW_DLV_OK) {
+                count = uvalue;
+                return true;
+            }
+            if (dwarf_formsdata(attr, &svalue, &err) == DW_DLV_OK && svalue >= 0) {
+                count = static_cast<uint64_t>(svalue);
+                return true;
+            }
+        }
+
+        // DW_AT_upper_bound
+        if (dwarf_attr(subrange_die, DW_AT_upper_bound, &attr, &err) == DW_DLV_OK) {
+            if (dwarf_formudata(attr, &uvalue, &err) == DW_DLV_OK) {
+                count = uvalue + 1;
+                return true;
+            }
+            if (dwarf_formsdata(attr, &svalue, &err) == DW_DLV_OK && svalue >= 0) {
+                count = static_cast<uint64_t>(svalue + 1);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    void resolve_type(Dwarf_Attribute attr, GlobalVariableType& result) {
+        Dwarf_Off offset;
+        if (dwarf_global_formref(attr, &offset, &err) != DW_DLV_OK) return;
+
+        Dwarf_Die die;
+        if (dwarf_offdie(dbg, offset, &die, &err) != DW_DLV_OK) return;
+
+        Dwarf_Half tag;
+        if (dwarf_tag(die, &tag, &err) != DW_DLV_OK) return;
+
+        switch (tag) {
+            case DW_TAG_base_type: {
+                char* name = nullptr;
+                if (dwarf_diename(die, &name, &err) == DW_DLV_OK && name) {
+                    result.primitive = std::string(name);
+                }
+                break;
+            }
+            case DW_TAG_pointer_type:
+                ++result.pointer_depth;
+                follow_type(die, result);
+                break;
+            case DW_TAG_array_type: {
+                result.is_array = true;
+
+                uint64_t total_elements = 1;
+                Dwarf_Die child;
+                if (dwarf_child(die, &child, &err) == DW_DLV_OK) {
+                    do {
+                        Dwarf_Half child_tag;
+                        if (dwarf_tag(child, &child_tag, &err) == DW_DLV_OK && child_tag == DW_TAG_subrange_type) {
+                            uint64_t count = 1;
+                            if (extract_array_size(child, count)) {
+                                total_elements *= count;
+                            } else {
+                                total_elements = 0;
+                            }
+                        }
+                    } while (dwarf_siblingof(dbg, child, &child, &err) == DW_DLV_OK);
+                }
+
+                result.element_count = total_elements;
+                follow_type(die, result);
+                break;
+            }
+            case DW_TAG_const_type:
+            case DW_TAG_volatile_type:
+            case DW_TAG_typedef:
+            case DW_TAG_restrict_type:
+                follow_type(die, result);
+                break;
+            default:
+                break;
+        }
+    }
+
+    void follow_type(Dwarf_Die die, GlobalVariableType& result) {
+        Dwarf_Attribute attr;
+        if (dwarf_attr(die, DW_AT_type, &attr, &err) == DW_DLV_OK) {
+            resolve_type(attr, result);
+        }
+    }
+};
 #endif // UTILS_HPP

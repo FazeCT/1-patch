@@ -320,6 +320,44 @@ class FunctionTree : public BinaryTree {
         }
 };
 
+// Print functions
+// Print help
+void print_help() {
+    std::cout << "\n\033[1;32m1-PATCH [v0.1.0]\033[0m" << std::endl;
+    std::cout << "\033[1;32m----------------\033[0m" << std::endl;
+
+    std::cout << "\033[1;36mStatic Binary Rewriting With Code Insertion\033[0m" << std::endl;
+    std::cout << "\033[1;36mPatch an ELF binary with user-input C program\033[0m" << std::endl;
+
+    std::cout << "\n\033[1;33mUsage: 1-patch <OPTIONS> [PATCH_CODE] [TARGET_BINARY] [OUTPUT_BINARY]\033[0m" << std::endl;
+
+    std::cout << "\n\033[1;36mPatch Syntax:\033[0m" << std::endl;
+    std::cout << "\033[1;36m  Prefix:\033[0m" << std::endl;
+    std::cout << "    \033[1;32mvolatile\033[0m\033[1;35m add_\033[0m Add a symbol to the target binary" << std::endl;
+    std::cout << "    \033[1;32mvolatile\033[0m\033[1;35m fix_\033[0m Fix a symbol within the target binary" << std::endl;
+    std::cout << "    \033[1;32mvolatile\033[0m\033[1;35m ref_\033[0m Reference a symbol within the target binary" << std::endl;
+
+    std::cout << "\n\033[1;36m  Suffix:\033[0m" << std::endl;
+    std::cout << "    Anything in case of\033[1;35m add_\033[0m" << std::endl;
+    std::cout << "    Address of the symbol within the target binary in case of\033[1;35m fix_\033[0m and\033[1;35m ref_\033[0m" << std::endl;
+
+    std::cout << "\n\033[1;36m  Note:\033[0m" << std::endl;
+    std::cout << "    Any symbols that do not adhere to the defined syntax will be skipped" << std::endl;
+
+    std::cout << "\n\033[1;36mOptions:\033[0m" << std::endl;
+    std::cout << "    \033[1;35m-h, --help\033[0m Show this help" << std::endl;
+
+    std::cout << "\n\033[1;36mArguments:\033[0m" << std::endl;
+    std::cout << "    \033[1;35mPATCH_CODE\033[0m Path to the C program" << std::endl;
+    std::cout << "    \033[1;35mTARGET_BINARY\033[0m Path to the target binary" << std::endl;
+    std::cout << "    \033[1;35mOUTPUT_BINARY\033[0m Path to the output binary" << std::endl;
+}
+
+void print_red(std::string output) { std::cout << "\033[1;31m[!]\033[0m " + output << std::endl; }
+void print_green(std::string output) { std::cout << "\033[1;32m[+]\033[0m " + output << std::endl; } 
+void print_yellow(std::string output) { std::cout << "\033[1;33m[?]\033[0m " + output << std::endl; }
+void print_blue(std::string output) { std::cout << "\033[1;36m[-]\033[0m " + output << std::endl; }
+
 // Convert hexadecimal to decimal
 uint64_t hex_to_decimal(const std::string& hex) {
     static const std::regex hex_pattern(R"(^0x[0-9a-fA-F]+$|^[0-9a-fA-F]+$)");
@@ -353,16 +391,6 @@ uint64_t vector_to_int(const std::vector<uint8_t>& data) {
         result |= static_cast<uint64_t>(data[i]) << (i * 8);
     }
 
-    return result;
-}
-
-// Convert little-endian integer to vector 
-std::vector<uint8_t> int_to_vector(uint64_t decimal) {
-    std::vector<uint8_t> result;
-    for (size_t i = 0; i < sizeof(uint64_t); ++i) {
-        result.push_back(static_cast<uint8_t>(decimal & 0xFF)); // Extract the least significant byte
-        decimal >>= 8;
-    }
     return result;
 }
 
@@ -480,14 +508,14 @@ std::vector<uint8_t> assemble_instruction(const std::string& instruction) {
     if (ks_asm(ks, instruction.c_str(), 0, &encode, &size, &count_ks) != KS_ERR_OK) {
         ks_free(encode);
         ks_close(ks);
-        std::cout << "\033[1;31m[!]\033[0m Failed to assemble instruction: " << instruction << std::endl;
+        print_red("Failed to assemble instruction: " + instruction);
         throw std::runtime_error("Failed to assemble instruction");
     } else {
         std::vector<uint8_t> assembled_code(encode, encode + size);
         ks_free(encode);
         ks_close(ks);
         if (assembled_code.empty()) {
-            std::cout << "\033[1;31m[!]\033[0m Failed to assemble instruction: " << instruction << std::endl;
+            print_red("Failed to assemble instruction: " + instruction);
             throw std::runtime_error("Failed to assemble instruction");
         }
         return assembled_code;

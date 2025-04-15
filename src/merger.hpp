@@ -1,6 +1,7 @@
 #include <vector>
 #include <string>
 #include <sstream>
+#include <set>
 
 #include <LIEF/LIEF.hpp>
 
@@ -13,13 +14,13 @@ std::vector<std::string> get_shared_libraries(const std::string& binary_path) {
 
     auto binary = LIEF::ELF::Parser::parse(binary_path);
     if (!binary) {
-        std::cout << "\033[1;31m[!]\033[0m Failed to parse binary: " << binary_path << std::endl;
+        print_red("Failed to parse binary: " + binary_path);
         return libraries;
     }
 
-    auto dynamic_string_section = binary->get_section(".dynstr");
+    LIEF::ELF::Section* dynamic_string_section = binary->get_section(".dynstr");
     if (!dynamic_string_section) {
-        std::cout << "\033[1;31m[!]\033[0m Failed to find .dynstr section in " << binary_path << std::endl;
+        print_red("Failed to find .dynstr section in " + binary_path);
     }
 
     std::vector<uint8_t> dynamic_strings(dynamic_string_section->content().begin(), dynamic_string_section->content().end());
@@ -53,7 +54,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     auto patch_binary = LIEF::ELF::Parser::parse(patch_binary_path);
 
     if (!patch_binary) {
-        std::cout << "\033[1;31m[!]\033[0m Failed to parse patch binary: " << patch_binary_path << std::endl;
+        print_red("Failed to parse patch binary: " + patch_binary_path);
         throw std::runtime_error("Merge failed");
     }
 
@@ -67,7 +68,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     close(original_stderr);
 
     if (!target_binary) {
-        std::cout << "\033[1;31m[!]\033[0m Failed to parse target binary: " << target_binary_path << std::endl;
+        print_red("Failed to parse target binary: " + target_binary_path);
         throw std::runtime_error("Merge failed");
     }
 
@@ -78,56 +79,99 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
         if (!target_binary->has_library(library)) {
             try {
                 target_binary->add_library(library);
-                std::cout << "\033[1;32m[+]\033[0m Added " << library << " to target binary" << std::endl;
+                print_green("Added " + library + " to target binary");
             } catch (const std::exception& e) {
                 continue;
             }
+        } else {
+            print_yellow("Library " + library + " is already included in target binary -> skipped");
         }
     }
+
+    // Add .got section
+    if (patch_binary->has_section(".got")) {
+        std::vector<const LIEF::ELF::Relocation*> patch_relocations;
+
+        for (const LIEF::ELF::Relocation& rel : patch_binary->pltgot_relocations()) {
+            const LIEF::ELF::Symbol* symbol = rel.symbol();
+            if (symbol == nullptr) continue;
+
+            patch_relocations.push_back(&rel);
+        }
+
+        size_t got_size = patch_relocations.size() * 8;
+        LIEF::ELF::Section* got_section = patch_binary->get_section(".got");
+
+        std::string new_got_section_name = ".got." + random_string;
+        LIEF::ELF::Section new_got_section(new_got_section_name);
+
+        new_got_section.content(std::vector<uint8_t>(got_size, 0x00));
+        new_got_section.type(got_section->type());
+        new_got_section.alignment(got_section->alignment());
+        new_got_section.flags(got_section->flags());
+
+        target_binary->add(new_got_section);
+
+        print_green("Added .got to target binary");
+    }
+
+    // Add .plt.sec section
+    if (patch_binary->has_section(".plt.sec")) {
+        LIEF::ELF::Section* pltsec_section = patch_binary->get_section(".plt.sec");
+        auto pltsec_section_content = pltsec_section->content();
+
+        std::string new_pltsec_section_name = ".plt.sec." + random_string;
+        LIEF::ELF::Section new_pltsec_section(new_pltsec_section_name);
+
+        new_pltsec_section.content(std::vector<uint8_t>(pltsec_section_content.begin(), pltsec_section_content.end()));
+        new_pltsec_section.alignment(pltsec_section->alignment());
+        new_pltsec_section.flags(pltsec_section->flags());
+
+        target_binary->add(new_pltsec_section);
+
+        print_green("Added .plt.sec to target binary");
+    }
     
+    // Add .rodata section
     if (patch_binary->has_section(".rodata")) {
-        auto rodata_section = patch_binary->get_section(".rodata");
+        LIEF::ELF::Section* rodata_section = patch_binary->get_section(".rodata");
         auto rodata_section_content = rodata_section->content();
 
         std::string new_rodata_section_name = ".rodata." + random_string;
-        auto new_rodata_section = LIEF::ELF::Section(new_rodata_section_name);
+        LIEF::ELF::Section new_rodata_section(new_rodata_section_name);
 
         new_rodata_section.content(std::vector<uint8_t>(rodata_section_content.begin(), rodata_section_content.end()));
         new_rodata_section.alignment(rodata_section->alignment());
         new_rodata_section.flags(rodata_section->flags());
 
         target_binary->add(new_rodata_section);
-        target_binary->write(output_binary_path);
 
-        uint64_t new_rodata_section_address = target_binary->get_section(new_rodata_section_name)->virtual_address();
-
-        std::cout << "\033[1;32m[+]\033[0m Added .rodata to target binary at 0x" << std::hex << new_rodata_section_address << std::endl;
+        print_green("Added .rodata to target binary");
     }
 
+    // Add .data section
     if (patch_binary->has_section(".data")) {
-        auto data_section = patch_binary->get_section(".data");
+        LIEF::ELF::Section* data_section = patch_binary->get_section(".data");
         auto data_section_content = data_section->content();
 
         std::string new_data_section_name = ".data." + random_string;
-        auto new_data_section = LIEF::ELF::Section(new_data_section_name);
+        LIEF::ELF::Section new_data_section(new_data_section_name);
 
         new_data_section.content(std::vector<uint8_t>(data_section_content.begin(), data_section_content.end()));
         new_data_section.alignment(data_section->alignment());
         new_data_section.flags(data_section->flags());
 
         target_binary->add(new_data_section);
-        target_binary->write(output_binary_path);
 
-        uint64_t new_data_section_address = target_binary->get_section(new_data_section_name)->virtual_address();
-
-        std::cout << "\033[1;32m[+]\033[0m Added .data to target binary at 0x" << std::hex << new_data_section_address << std::endl;
+        print_green("Added .data to target binary");
     }
 
+    // Add .text section
     if (!function_tree.get_functions().empty()) {
-        auto text_section = target_binary->get_section(".text");
+        LIEF::ELF::Section* text_section = target_binary->get_section(".text");
 
         std::string new_text_section_name = ".text." + random_string;
-        auto new_text_section = LIEF::ELF::Section(new_text_section_name);
+        LIEF::ELF::Section new_text_section(new_text_section_name);
 
         new_text_section.alignment(text_section->alignment());
         new_text_section.flags(text_section->flags());
@@ -143,28 +187,12 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
         new_text_section.content(new_text_section_content);
 
         target_binary->add(new_text_section);
-        target_binary->write(output_binary_path);
 
-        uint64_t new_text_section_address = target_binary->get_section(new_text_section_name)->virtual_address();
-
-        for (auto& function : function_tree.get_functions()) {
-            function->new_address += new_text_section_address;
-        }
-
-        target_binary->write(output_binary_path);
-
-        std::cout << "\033[1;32m[+]\033[0m Added .text to target binary at 0x" << std::hex << new_text_section_address << std::endl;
+        print_green("Added .text to target binary");
     }
     
-    // Find new address of global variables
-    for (auto& global_var : global_var_tree.get_global_vars()) {
-        LIEF::ELF::Section* assoc_section = patch_binary->section_from_virtual_address(global_var->patch_address);
-        
-        uint64_t offset_in_section = global_var->patch_address - assoc_section->virtual_address();
-        uint64_t new_address = target_binary->get_section(assoc_section->name() + "." + random_string)->virtual_address() + offset_in_section;
 
-        global_var->new_address = new_address;
-    }
+    target_binary->write(output_binary_path);
 
     return random_string;
 }

@@ -17,7 +17,7 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
     auto patch_binary = LIEF::ELF::Parser::parse(patch_binary_path);
 
     if (!patch_binary) {
-        std::cout << "\033[1;31m[!]\033[0m Failed to parse patch binary: " << patch_binary_path << std::endl;
+        print_red("Failed to parse patch binary: " + patch_binary_path);
         throw std::runtime_error("Patch parser failed");
     }
     
@@ -45,12 +45,12 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
         if (operation != OperationType::Add) {
             target_address = hex_to_decimal(symbol_name.substr(4));
             if (target_address == UINT64_MAX) {
-                std::cout << "\033[1;31m[!]\033[0m Target address for " << symbol_name << " cannot be resolved -> skipped" << std::endl;
+                print_yellow("Target address for " + symbol_name + " cannot be resolved -> skipped");
                 continue;
             }
         }
 
-        std::cout << "\033[1;36m[-]\033[0m Found symbol " << symbol_name << std::endl;
+        print_blue("Found symbol " + symbol_name);
 
         if (symbol.is_variable()) {
             DWARFResolver resolver(patch_binary_path);
@@ -108,19 +108,10 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
             });
 
             function_tree.insert(function_node);
-
-            // Insert .plt functions
-            for (auto& reference : function_node->get_function()->reference_table->get_references()) {
-                if (reference->reference_type == SymbolType::Function) {
-                    // std::cout << "[-] Found reference to function: 0x" << std::hex << reference->reference_address << std::endl;
-                    LIEF::ELF::Section* plt_sec = patch_binary->section_from_virtual_address(reference->reference_address);
-                    // to-do
-                }
-            }
         }
 
         else {
-            std::cout << "\033[1;31m[!]\033[0m Symbol " << symbol_name << " is not a global variable or a function" << std::endl;
+            print_red("Symbol " + symbol_name + " is not a global variable or a function");
         }
     }
 }

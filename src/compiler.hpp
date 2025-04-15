@@ -33,17 +33,17 @@ std::string execute_command(const std::string& command) {
 // Execute gcc compiler command
 void exec_compile(const std::string& input_path, const std::string& output_path) {
     if (!std::filesystem::exists(input_path)) {
-        std::cout << "\033[1;31m[!]\033[0m Patch file does not exist: " << input_path << std::endl;
+        print_red("Patch file does not exist: " + input_path);
         throw std::runtime_error("Compilation failed");
     }
 
     if (std::filesystem::is_directory(input_path)) {
-        std::cout << "\033[1;31m[!]\033[0m Patch file path is a directory, not a file: " << input_path << std::endl;
+        print_red("Patch file path is a directory, not a file: " + input_path);
         throw std::runtime_error("Compilation failed");
     }
 
     if (std::filesystem::path(input_path).extension() != ".c") {
-        std::cout << "\033[1;31m[!]\033[0m Patch file extension is not .c: " << input_path << std::endl;
+        print_red("Patch file extension is not .c: " + input_path);
         throw std::runtime_error("Compilation failed");
     }
 
@@ -65,7 +65,7 @@ std::string compile(const std::string& input_path) {
     try {
         temp_dir = std::filesystem::temp_directory_path();
     } catch (const std::filesystem::filesystem_error& e) {
-        std::cout << "\033[1;31m[!]\033[0m Failed to find temp directory" << std::endl;
+        print_red("Failed to find temp directory");
         throw std::runtime_error("Compilation failed");
     }
 
@@ -83,13 +83,13 @@ std::string compile(const std::string& input_path) {
             // Create a temporary file with a minimal main() function
             std::ofstream tmp_main(tmp_main_file);
             if (!tmp_main.is_open()) {
-                std::cout << "\033[1;31m[!]\033[0m Failed to create temporary file: " << tmp_main_file << std::endl;
+                print_red("Failed to create temporary file: " + tmp_main_file.string());
                 throw std::runtime_error("Compilation failed");
             }
 
             std::ifstream original_file(input_path);
             if (!original_file.is_open()) {
-                std::cout << "\033[1;31m[!]\033[0m Failed to open original file: " << input_path << std::endl;
+                print_red("Failed to open original file: " + input_path);
                 throw std::runtime_error("Compilation failed");
             }
 
@@ -97,7 +97,7 @@ std::string compile(const std::string& input_path) {
             tmp_main << original_content << "\n\nint main() {}" << std::endl;
             tmp_main.close();
 
-            std::cout << "\033[1;33m[?]\033[0m Missing main() function in " << input_path << ", added main()" << std::endl;
+            print_yellow("Missing main() function in " + input_path + ", added main()");
 
             try {
                 // Re-compile with main() function
@@ -110,12 +110,12 @@ std::string compile(const std::string& input_path) {
                 // Clean up the temporary main file
                 std::filesystem::remove(tmp_main_file);
 
-                std::cout << "\033[1;31m[!]\033[0m Failed to compile " << input_path << std::endl;
+                print_red("Failed to compile " + input_path);
                 throw std::runtime_error("Compilation failed");
             } 
         }
 
-        std::cout << "\033[1;31m[!]\033[0m Failed to compile " << input_path << std::endl;
+        print_red("Failed to compile " + input_path);
         throw std::runtime_error("Compilation failed");
     }
 }

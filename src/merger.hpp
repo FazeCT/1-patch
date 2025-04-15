@@ -158,7 +158,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     
     // Find new address of global variables
     for (auto& global_var : global_var_tree.get_global_vars()) {
-        auto assoc_section = patch_binary->section_from_virtual_address(global_var->patch_address);
+        LIEF::ELF::Section* assoc_section = patch_binary->section_from_virtual_address(global_var->patch_address);
         
         uint64_t offset_in_section = global_var->patch_address - assoc_section->virtual_address();
         uint64_t new_address = target_binary->get_section(assoc_section->name() + "." + random_string)->virtual_address() + offset_in_section;

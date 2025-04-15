@@ -480,12 +480,14 @@ std::vector<uint8_t> assemble_instruction(const std::string& instruction) {
     if (ks_asm(ks, instruction.c_str(), 0, &encode, &size, &count_ks) != KS_ERR_OK) {
         ks_free(encode);
         ks_close(ks);
+        std::cout << "\033[1;31m[!]\033[0m Failed to assemble instruction: " << instruction << std::endl;
         throw std::runtime_error("Failed to assemble instruction");
     } else {
         std::vector<uint8_t> assembled_code(encode, encode + size);
         ks_free(encode);
         ks_close(ks);
         if (assembled_code.empty()) {
+            std::cout << "\033[1;31m[!]\033[0m Failed to assemble instruction: " << instruction << std::endl;
             throw std::runtime_error("Failed to assemble instruction");
         }
         return assembled_code;

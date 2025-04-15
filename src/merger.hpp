@@ -13,13 +13,13 @@ std::vector<std::string> get_shared_libraries(const std::string& binary_path) {
 
     auto binary = LIEF::ELF::Parser::parse(binary_path);
     if (!binary) {
-        std::cerr << "\033[1;31m[!]\033[0m Failed to parse binary: " << binary_path << "\033[0m\n";
+        std::cout << "\033[1;31m[!]\033[0m Failed to parse binary: " << binary_path << std::endl;
         return libraries;
     }
 
     auto dynamic_string_section = binary->get_section(".dynstr");
     if (!dynamic_string_section) {
-        std::cerr << "\033[1;31m[!]\033[0m Failed to find .dynstr section in " << binary_path << "\033[0m\n";
+        std::cout << "\033[1;31m[!]\033[0m Failed to find .dynstr section in " << binary_path << std::endl;
     }
 
     std::vector<uint8_t> dynamic_strings(dynamic_string_section->content().begin(), dynamic_string_section->content().end());
@@ -53,7 +53,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     auto patch_binary = LIEF::ELF::Parser::parse(patch_binary_path);
 
     if (!patch_binary) {
-        std::cerr << "\033[1;31m[!]\033[0m Failed to parse patch binary: " << patch_binary_path << "\033[0m\n";
+        std::cout << "\033[1;31m[!]\033[0m Failed to parse patch binary: " << patch_binary_path << std::endl;
         throw std::runtime_error("Merge failed");
     }
 
@@ -67,7 +67,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     close(original_stderr);
 
     if (!target_binary) {
-        std::cerr << "\033[1;31m[!]\033[0m Failed to parse target binary: " << target_binary_path << "\033[0m\n";
+        std::cout << "\033[1;31m[!]\033[0m Failed to parse target binary: " << target_binary_path << std::endl;
         throw std::runtime_error("Merge failed");
     }
 

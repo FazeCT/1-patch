@@ -11,34 +11,34 @@
 
 // Print help
 void print_help() {
-    std::cout << "\n\033[1;32m1-PATCH [v0.1.0]\033[0m\n";
-    std::cout << "\033[1;32m----------------\033[0m\n";
+    std::cout << "\n\033[1;32m1-PATCH [v0.1.0]\033[0m" << std::endl;
+    std::cout << "\033[1;32m----------------\033[0m" << std::endl;
 
-    std::cout << "\033[1;36mStatic Binary Rewriting With Code Insertion\033[0m\n";
-    std::cout << "\033[1;36mPatch an ELF binary with user-input C program\033[0m\n";
+    std::cout << "\033[1;36mStatic Binary Rewriting With Code Insertion\033[0m" << std::endl;
+    std::cout << "\033[1;36mPatch an ELF binary with user-input C program\033[0m" << std::endl;
 
-    std::cout << "\n\033[1;33mUsage: 1-patch <OPTIONS> [PATCH_CODE] [TARGET_BINARY] [OUTPUT_BINARY]\033[0m\n";
+    std::cout << "\n\033[1;33mUsage: 1-patch <OPTIONS> [PATCH_CODE] [TARGET_BINARY] [OUTPUT_BINARY]\033[0m" << std::endl;
 
-    std::cout << "\n\033[1;36mPatch Syntax:\033[0m\n";
-    std::cout << "\033[1;36m  Prefix:\033[0m\n";
-    std::cout << "    \033[1;32mvolatile\033[0m\033[1;35m add_\033[0m Add a symbol to the target binary\n";
-    std::cout << "    \033[1;32mvolatile\033[0m\033[1;35m fix_\033[0m Fix a symbol within the target binary\n";
-    std::cout << "    \033[1;32mvolatile\033[0m\033[1;35m ref_\033[0m Reference a symbol within the target binary\n";
+    std::cout << "\n\033[1;36mPatch Syntax:\033[0m" << std::endl;
+    std::cout << "\033[1;36m  Prefix:\033[0m" << std::endl;
+    std::cout << "    \033[1;32mvolatile\033[0m\033[1;35m add_\033[0m Add a symbol to the target binary" << std::endl;
+    std::cout << "    \033[1;32mvolatile\033[0m\033[1;35m fix_\033[0m Fix a symbol within the target binary" << std::endl;
+    std::cout << "    \033[1;32mvolatile\033[0m\033[1;35m ref_\033[0m Reference a symbol within the target binary" << std::endl;
 
-    std::cout << "\n\033[1;36m  Suffix:\033[0m\n";
-    std::cout << "    Anything in case of\033[1;35m add_\033[0m\n";
-    std::cout << "    Address of the symbol within the target binary in case of\033[1;35m fix_\033[0m and\033[1;35m ref_\033[0m\n";
+    std::cout << "\n\033[1;36m  Suffix:\033[0m" << std::endl;
+    std::cout << "    Anything in case of\033[1;35m add_\033[0m" << std::endl;
+    std::cout << "    Address of the symbol within the target binary in case of\033[1;35m fix_\033[0m and\033[1;35m ref_\033[0m" << std::endl;
 
-    std::cout << "\n\033[1;36m  Note:\033[0m\n";
-    std::cout << "    Any symbols that do not adhere to the defined syntax will be skipped\n";
+    std::cout << "\n\033[1;36m  Note:\033[0m" << std::endl;
+    std::cout << "    Any symbols that do not adhere to the defined syntax will be skipped" << std::endl;
 
-    std::cout << "\n\033[1;36mOptions:\033[0m\n";
-    std::cout << "    \033[1;35m-h, --help\033[0m Show this help\n";
+    std::cout << "\n\033[1;36mOptions:\033[0m" << std::endl;
+    std::cout << "    \033[1;35m-h, --help\033[0m Show this help" << std::endl;
 
-    std::cout << "\n\033[1;36mArguments:\033[0m\n";
-    std::cout << "    \033[1;35mPATCH_CODE\033[0m Path to the C program\n";
-    std::cout << "    \033[1;35mTARGET_BINARY\033[0m Path to the target binary\n";
-    std::cout << "    \033[1;35mOUTPUT_BINARY\033[0m Path to the output binary\n";
+    std::cout << "\n\033[1;36mArguments:\033[0m" << std::endl;
+    std::cout << "    \033[1;35mPATCH_CODE\033[0m Path to the C program" << std::endl;
+    std::cout << "    \033[1;35mTARGET_BINARY\033[0m Path to the target binary" << std::endl;
+    std::cout << "    \033[1;35mOUTPUT_BINARY\033[0m Path to the output binary" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -72,9 +72,9 @@ int main(int argc, char* argv[]) {
 
     try {
         patch_binary_path = compile(patch_code_path);
-        std::cout << "\033[1;32m[+]\033[0m Compiled " << patch_code_path << " into " << patch_binary_path << "\n";
+        std::cout << "\033[1;32m[+]\033[0m Compiled " << patch_code_path << " into " << patch_binary_path << std::endl;
     } catch (const std::runtime_error& e) {
-        std::cerr << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << "\033[0m\n";
+        std::cout << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << std::endl;
         return 1;
     }
 
@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
     try {
         parse_patch_binary(patch_binary_path, global_var_tree, function_tree);
     } catch (const std::runtime_error& e) {
-        std::cerr << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << "\033[0m\n";
+        std::cout << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << std::endl;
         return 1;
     }
 
@@ -95,7 +95,7 @@ int main(int argc, char* argv[]) {
     try {
         parse_target_binary(target_binary_path, reference_tree);
     } catch (const std::runtime_error& e) {
-        std::cerr << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << "\033[0m\n";
+        std::cout << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << std::endl;
         return 1;
     }
 
@@ -108,14 +108,14 @@ int main(int argc, char* argv[]) {
     try {
         new_section_indicator = merge_binary(patch_binary_path, target_binary_path, output_binary_path, global_var_tree, function_tree);
     } catch (const std::runtime_error& e) {
-        std::cerr << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << "\033[0m\n";
+        std::cout << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << std::endl;
         return 1;
     }
 
     try {
         relocate(patch_binary_path, target_binary_path, output_binary_path, global_var_tree, function_tree, new_section_indicator);
     } catch (const std::runtime_error& e) {
-        std::cerr << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << "\033[0m\n";
+        std::cout << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << std::endl;
         return 1;
     }
 

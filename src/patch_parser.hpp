@@ -17,7 +17,7 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
     auto patch_binary = LIEF::ELF::Parser::parse(patch_binary_path);
 
     if (!patch_binary) {
-        std::cerr << "\033[1;31m[!]\033[0m Failed to parse patch binary: " << patch_binary_path << "\033[0m\n";
+        std::cout << "\033[1;31m[!]\033[0m Failed to parse patch binary: " << patch_binary_path << std::endl;
         throw std::runtime_error("Patch parser failed");
     }
     
@@ -43,13 +43,14 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
         uint64_t target_address = UINT64_MAX;
 
         if (operation != OperationType::Add) {
-            try {
-                target_address = hex_to_decimal(symbol_name.substr(4));
-            } catch (...) {
-                std::cerr << "[-] Target address for " << symbol_name << " cannot be resolved" << std::endl;
+            target_address = hex_to_decimal(symbol_name.substr(4));
+            if (target_address == UINT64_MAX) {
+                std::cout << "\033[1;31m[!]\033[0m Target address for " << symbol_name << " cannot be resolved -> skipped" << std::endl;
                 continue;
             }
         }
+
+        std::cout << "\033[1;36m[-]\033[0m Found symbol " << symbol_name << std::endl;
 
         if (symbol.is_variable()) {
             DWARFResolver resolver(patch_binary_path);
@@ -119,7 +120,7 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarTree& glo
         }
 
         else {
-            std::cerr << "\033[1;31m[!]\033[0m Symbol " << symbol_name << " is not a global variable or a function" << std::endl;
+            std::cout << "\033[1;31m[!]\033[0m Symbol " << symbol_name << " is not a global variable or a function" << std::endl;
         }
     }
 }

@@ -19,7 +19,7 @@ void recursive_patcher(
     // Get 8-byte content at the address (64-bit pointers)
     auto element_content = patch_binary.get_content_from_virtual_address(address, 8);
     if (element_content.size() != 8) {
-        std::cerr << "[-] Failed to read full pointer at address 0x" << std::hex << address << std::dec << "\n";
+        std::cout << "\033[1;31m[!]\033[0m Failed to read full pointer at address 0x" << std::hex << address << std::dec << std::endl;
         return;
     }
 
@@ -28,7 +28,7 @@ void recursive_patcher(
     // Get original section from element value
     LIEF::ELF::Section* assoc_section_value = patch_binary.section_from_virtual_address(element_value);
     if (!assoc_section_value) {
-        std::cerr << "[-] No section found for virtual address 0x" << std::hex << element_value << std::dec << "\n";
+        std::cout << "\033[1;31m[!]\033[0m No section found for virtual address 0x" << std::hex << element_value << std::dec << std::endl;
         return;
     }
 
@@ -36,7 +36,7 @@ void recursive_patcher(
     std::string new_section_value_name = assoc_section_value->name() + "." + new_section_indicator;
     LIEF::ELF::Section* new_section_value = output_binary.get_section(new_section_value_name);
     if (!new_section_value) {
-        std::cerr << "[-] Could not find section '" << new_section_value_name << "' in output binary\n";
+        std::cout << "\033[1;31m[!]\033[0m Could not find section '" << new_section_value_name << "' in output binary" << std::endl;
         return;
     }
 
@@ -47,7 +47,7 @@ void recursive_patcher(
     // Get original section from element address
     LIEF::ELF::Section* assoc_section_address = patch_binary.section_from_virtual_address(address);
     if (!assoc_section_address) {
-        std::cerr << "[-] No section found for virtual address 0x" << std::hex << address << std::dec << "\n";
+        std::cout << "\033[1;31m[!]\033[0m No section found for virtual address 0x" << std::hex << address << std::dec << std::endl;
         return;
     }
 
@@ -56,7 +56,7 @@ void recursive_patcher(
     LIEF::ELF::Section* new_section_address = output_binary.get_section(new_section_address_name);
 
     if (!new_section_address) {
-        std::cerr << "[-] Could not find section '" << new_section_address_name << "' in output binary\n";
+        std::cout << "\033[1;31m[!]\033[0m Could not find section '" << new_section_address_name << "' in output binary" << std::endl;
         return;
     }
 
@@ -110,6 +110,9 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
             output_binary->patch_address(global_var->target_address + entrypoint_difference, std::vector<uint8_t>(new_value.begin(), new_value.end()));
         }
     }   
+
+    std::cout << "\033[1;32m[+]\033[0m Relocated all global variables" << std::endl;
+    
     // Relocate functions
     for (auto& function : function_tree.get_functions()) {
         // Relocate ref_ symbols referenced by patched functions
@@ -319,7 +322,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
         }        
     }
     
-    // Relocate global variables
+    std::cout << "\033[1;32m[+]\033[0m Relocated all functions" << std::endl;
     cs_close(&handle);
 
     output_binary->write(output_binary_path);

@@ -3,7 +3,8 @@ CFLAGS = -Wall -g
 LDFLAGS = -s
 
 # Define the targets
-all: original build run
+all: original build run clean
+golang: original_golang build run_golang clean
 
 # Rule to build the original binary
 original: example/original.c
@@ -56,6 +57,8 @@ run_patched_golang:
 
 # Rule to clean up generated files
 clean:
-	rm -f example/original
-	rm -f example/original_cocay
-	rm -f example/original_go
+	@rm -f example/original
+	@rm -f example/original_patched
+	@rm -f example/original_cocay
+	@rm -f example/original_go
+	@rm -f example/original_go_cocay

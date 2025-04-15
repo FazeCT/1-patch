@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <dwarf.h>
 #include <libdwarf.h>
+#include <regex>
 #include <fcntl.h>
 
 #include <capstone/capstone.h>
@@ -321,7 +322,17 @@ class FunctionTree : public BinaryTree {
 
 // Convert hexadecimal to decimal
 uint64_t hex_to_decimal(const std::string& hex) {
-    return std::stoull(hex, nullptr, 16);
+    static const std::regex hex_pattern(R"(^0x[0-9a-fA-F]+$|^[0-9a-fA-F]+$)");
+
+    if (!std::regex_match(hex, hex_pattern)) {
+        return UINT64_MAX;
+    }
+
+    try {
+        return std::stoull(hex, nullptr, 16);
+    } catch (...) {
+        return UINT64_MAX;
+    }
 }
 
 // Convert decimal to hexadecimal

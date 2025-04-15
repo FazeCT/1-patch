@@ -18,7 +18,7 @@ void parse_target_binary(const std::string& target_binary_path, ReferenceTree& r
     auto target_binary = LIEF::ELF::Parser::parse(target_binary_path);
 
     if (!target_binary) {
-        std::cerr << "\033[1;31m[!]\033[0m Failed to parse target binary: " << target_binary_path << "\033[0m\n";
+        std::cout << "\033[1;31m[!]\033[0m Failed to parse target binary: " << target_binary_path << std::endl;
         throw std::runtime_error("Target parser failed");
     }
 

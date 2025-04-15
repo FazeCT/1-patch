@@ -363,7 +363,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                         }
                     } else {
                         std::cout << "\033[1;31m[!]\033[0m Failed to query for function at 0x" << std::hex << reference->reference_address << " in patch binary" << std::endl;
-                        // throw std::runtime_error("Relocator failed");
+                        throw std::runtime_error("Relocator failed");
                     }
                 }
             }

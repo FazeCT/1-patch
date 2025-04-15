@@ -52,6 +52,9 @@ void exec_compile(const std::string& input_path, const std::string& output_path)
 
     if (output.find("undefined reference to `main'") != std::string::npos) {
         throw std::runtime_error("Missing main() function");
+    } else if (!output.empty()) {
+        std::cout << output << std::endl;
+        throw std::runtime_error("Compilation failed");
     }
 }
 

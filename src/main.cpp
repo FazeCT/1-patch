@@ -5,7 +5,6 @@
 #include "utils.hpp"
 #include "compiler.hpp"
 #include "patch_parser.hpp"
-#include "target_parser.hpp"
 #include "merger.hpp"
 #include "relocator.hpp"
 
@@ -84,16 +83,6 @@ int main(int argc, char* argv[]) {
 
     try {
         parse_patch_binary(patch_binary_path, global_var_tree, function_tree);
-    } catch (const std::runtime_error& e) {
-        std::cout << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << std::endl;
-        return 1;
-    }
-
-    // Contains references within the target binary
-    ReferenceTree reference_tree;
-
-    try {
-        parse_target_binary(target_binary_path, reference_tree);
     } catch (const std::runtime_error& e) {
         std::cout << "\033[1;31m[!]\033[0m 1-patch: " << e.what() << std::endl;
         return 1;

@@ -129,9 +129,8 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
 
     std::cout << "\033[1;32m[+]\033[0m Relocated .got and .plt entries" << std::endl;
 
-    // The above part pushed the binary down
+    // The above part pushed the target binary down
     uint64_t entrypoint_difference = output_binary->header().entrypoint() - target_binary->header().entrypoint();
-
 
     // Find new address of functions
     for (auto& function : function_tree.get_functions()) {
@@ -211,17 +210,11 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                         print_red("Could not find section " + new_section_address_name + " in output binary");
                         break;
                     }
-
                     
                     uint64_t new_element_address = element_address - assoc_section_address->virtual_address() + new_section_address->virtual_address();
-                    auto patched_content = output_binary->get_content_from_virtual_address(0x49010, 8);
-                    std::cout << std::hex << vector_to_int(std::vector<uint8_t>(patched_content.begin(), patched_content.end())) << std::endl;
-
+                    
                     // Patch the value in output binary
                     output_binary->patch_address(new_element_address, new_element_content);
-
-                    patched_content = output_binary->get_content_from_virtual_address(0x49010, 8);
-                    std::cout << std::hex << vector_to_int(std::vector<uint8_t>(patched_content.begin(), patched_content.end())) << std::endl;
 
                     element_address = new_element_value;
                 }
@@ -553,8 +546,18 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
         }        
     }
     
-    std::cout << "\033[1;32m[+]\033[0m Relocated all functions" << std::endl;
     cs_close(&handle);
+    std::cout << "\033[1;32m[+]\033[0m Relocated all functions" << std::endl;
+
+    // Finally, update addend of RELATIVE relocations
+    for (LIEF::ELF::Relocation& r : output_binary->dynamic_relocations()) {
+        if (r.type() == LIEF::ELF::Relocation::TYPE::X86_64_RELATIVE) {
+            auto addend_vector = output_binary->get_content_from_virtual_address(r.address(), 8);
+            r.addend(vector_to_int(std::vector<uint8_t>(addend_vector.begin(), addend_vector.end())));
+        }
+    }
+
+    std::cout << "\033[1;32m[+]\033[0m Updated .rela.dyn RELATIVE addends" << std::endl;
 
     output_binary->write(output_binary_path);
 }

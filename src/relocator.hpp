@@ -166,7 +166,6 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                     // Get 8-byte content at the address (64-bit pointers)
                     auto element_content = patch_binary->get_content_from_virtual_address(element_address, 8);
                     if (element_content.size() != 8) {
-                        print_red("Failed to read full pointer at address " + decimal_to_hex(element_address));
                         break;
                     }
 
@@ -175,7 +174,6 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                     // Get original section from element value
                     LIEF::ELF::Section* assoc_section_value = patch_binary->section_from_virtual_address(element_value);
                     if (!assoc_section_value) {
-                        print_red("No section found for virtual address " + decimal_to_hex(element_address));
                         break;
                     }
 
@@ -183,7 +181,6 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                     std::string new_section_value_name = assoc_section_value->name() + "." + new_section_indicator;
                     LIEF::ELF::Section* new_section_value = output_binary->get_section(new_section_value_name);
                     if (!new_section_value) {
-                        print_red("Could not find section " + new_section_value_name + " in output binary");
                         break;
                     }
 
@@ -198,7 +195,6 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                     // Get original section from element address
                     LIEF::ELF::Section* assoc_section_address = patch_binary->section_from_virtual_address(element_address);
                     if (!assoc_section_address) {
-                        print_red("No section found for virtual address " + decimal_to_hex(element_address));
                         break;
                     }
 
@@ -207,7 +203,6 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                     LIEF::ELF::Section* new_section_address = output_binary->get_section(new_section_address_name);
 
                     if (!new_section_address) {
-                        print_red("Could not find section " + new_section_address_name + " in output binary");
                         break;
                     }
                     

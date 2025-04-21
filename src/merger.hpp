@@ -1,7 +1,6 @@
 #include <vector>
 #include <string>
-#include <sstream>
-#include <set>
+#include <memory>
 
 #include <LIEF/LIEF.hpp>
 
@@ -12,7 +11,7 @@
 std::vector<std::string> get_shared_libraries(const std::string& binary_path) {
     std::vector<std::string> libraries;
 
-    auto binary = LIEF::ELF::Parser::parse(binary_path);
+    std::unique_ptr<LIEF::ELF::Binary> binary = LIEF::ELF::Parser::parse(binary_path);
     if (!binary) {
         print_red("Failed to parse binary: " + binary_path);
         return libraries;
@@ -21,6 +20,7 @@ std::vector<std::string> get_shared_libraries(const std::string& binary_path) {
     LIEF::ELF::Section* dynamic_string_section = binary->get_section(".dynstr");
     if (!dynamic_string_section) {
         print_red("Failed to find .dynstr section in " + binary_path);
+        return libraries;
     }
 
     std::vector<uint8_t> dynamic_strings(dynamic_string_section->content().begin(), dynamic_string_section->content().end());
@@ -47,11 +47,11 @@ std::vector<std::string> get_shared_libraries(const std::string& binary_path) {
 }
 
 std::string merge_binary(const std::string& patch_binary_path, const std::string& target_binary_path, const std::string& output_binary_path,
-                    GlobalVarTree& global_var_tree, FunctionTree& function_tree) {
+                    GlobalVarMap& global_var_map, FunctionMap& function_map) {
 
     std::string random_string = generate_random_string();
 
-    auto patch_binary = LIEF::ELF::Parser::parse(patch_binary_path);
+    std::unique_ptr<LIEF::ELF::Binary> patch_binary = LIEF::ELF::Parser::parse(patch_binary_path);
 
     if (!patch_binary) {
         print_red("Failed to parse patch binary: " + patch_binary_path);
@@ -61,7 +61,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     int original_stderr = dup(STDERR_FILENO); 
     freopen("/dev/null", "w", stderr);
     
-    auto target_binary = LIEF::ELF::Parser::parse(target_binary_path);
+    std::unique_ptr<LIEF::ELF::Binary> target_binary = LIEF::ELF::Parser::parse(target_binary_path);
 
     fflush(stderr);
     dup2(original_stderr, STDERR_FILENO);
@@ -124,6 +124,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
         LIEF::ELF::Section new_pltsec_section(new_pltsec_section_name);
 
         new_pltsec_section.content(std::vector<uint8_t>(pltsec_section_content.begin(), pltsec_section_content.end()));
+        new_pltsec_section.type(pltsec_section->type());
         new_pltsec_section.alignment(pltsec_section->alignment());
         new_pltsec_section.flags(pltsec_section->flags());
 
@@ -141,6 +142,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
         LIEF::ELF::Section new_rodata_section(new_rodata_section_name);
 
         new_rodata_section.content(std::vector<uint8_t>(rodata_section_content.begin(), rodata_section_content.end()));
+        new_rodata_section.type(rodata_section->type());
         new_rodata_section.alignment(rodata_section->alignment());
         new_rodata_section.flags(rodata_section->flags());
 
@@ -150,7 +152,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     }
 
     // Add .data section
-    if (patch_binary->has_section(".data")) {
+    if (patch_binary->has_section(".data") && !global_var_map.get_global_vars().empty()) {
         LIEF::ELF::Section* data_section = patch_binary->get_section(".data");
         auto data_section_content = data_section->content();
 
@@ -158,6 +160,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
         LIEF::ELF::Section new_data_section(new_data_section_name);
 
         new_data_section.content(std::vector<uint8_t>(data_section_content.begin(), data_section_content.end()));
+        new_data_section.type(data_section->type());
         new_data_section.alignment(data_section->alignment());
         new_data_section.flags(data_section->flags());
 
@@ -167,18 +170,19 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     }
 
     // Add .text section
-    if (!function_tree.get_functions().empty()) {
+    if (patch_binary->has_section(".text") && !function_map.get_functions().empty()) {
         LIEF::ELF::Section* text_section = target_binary->get_section(".text");
 
         std::string new_text_section_name = ".text." + random_string;
         LIEF::ELF::Section new_text_section(new_text_section_name);
 
+        new_text_section.type(text_section->type());
         new_text_section.alignment(text_section->alignment());
         new_text_section.flags(text_section->flags());
 
         std::vector<uint8_t> new_text_section_content;
 
-        for (auto& function : function_tree.get_functions()) {
+        for (auto& function : function_map.get_functions()) {
             auto function_code = patch_binary->get_content_from_virtual_address(function->patch_address, function->size);
             function->new_address = new_text_section_content.size();
             new_text_section_content.insert(new_text_section_content.end(), function_code.begin(), function_code.end());
@@ -191,9 +195,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
         print_green("Added .text to target binary");
     }
     
-
     target_binary->write(output_binary_path);
-
     return random_string;
 }
 

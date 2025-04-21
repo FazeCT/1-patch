@@ -1,5 +1,9 @@
-#include <capstone/capstone.h>
+
 #include <map>
+#include <memory> 
+
+#include <capstone/capstone.h>
+#include <keystone/keystone.h>
 
 #include "utils.hpp"
 
@@ -7,11 +11,11 @@
 #define RELOCATOR_HPP
 
 void relocate(const std::string& patch_binary_path, const std::string& target_binary_path, const std::string& output_binary_path,
-                GlobalVarTree& global_var_tree, FunctionTree& function_tree, const std::string new_section_indicator) {
+                GlobalVarMap& global_var_map, FunctionMap& function_map, const std::string new_section_indicator) {
     
-    auto patch_binary = LIEF::ELF::Parser::parse(patch_binary_path);
-    auto target_binary = LIEF::ELF::Parser::parse(target_binary_path);
-    auto output_binary = LIEF::ELF::Parser::parse(output_binary_path);
+    std::unique_ptr<LIEF::ELF::Binary> patch_binary = LIEF::ELF::Parser::parse(patch_binary_path);
+    std::unique_ptr<LIEF::ELF::Binary> target_binary = LIEF::ELF::Parser::parse(target_binary_path);
+    std::unique_ptr<LIEF::ELF::Binary> output_binary = LIEF::ELF::Parser::parse(output_binary_path);
 
     std::map<uint64_t, uint64_t> got_entries;
 
@@ -133,14 +137,14 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
     uint64_t entrypoint_difference = output_binary->header().entrypoint() - target_binary->header().entrypoint();
 
     // Find new address of functions
-    for (auto& function : function_tree.get_functions()) {
+    for (auto& function : function_map.get_functions()) {
             uint64_t new_text_section_address = output_binary->get_section(".text." + new_section_indicator)->virtual_address();
             function->new_address += new_text_section_address;
         }
 
 
     // Find new address of global variables
-    for (auto& global_var : global_var_tree.get_global_vars()) {
+    for (auto& global_var : global_var_map.get_global_vars()) {
         if (global_var->operation != OperationType::Ref) {
             LIEF::ELF::Section* assoc_section = patch_binary->section_from_virtual_address(global_var->patch_address);
         
@@ -152,7 +156,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
     }
 
     // Relocate global variables
-    for (auto& global_var : global_var_tree.get_global_vars()) {
+    for (auto& global_var : global_var_map.get_global_vars()) {
         auto variable_type = global_var->variable_type;
 
         // We only care about pointer variables
@@ -226,7 +230,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
     std::cout << "\033[1;32m[+]\033[0m Relocated all global variables" << std::endl;
     
     // Relocate functions
-    for (auto& function : function_tree.get_functions()) {
+    for (auto& function : function_map.get_functions()) {
         // Relocate references from patched functions
         if (function->operation != OperationType::Ref) {
             for (auto& reference : function->reference_table->get_references()) {
@@ -287,7 +291,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                     }
 
                     // Check if it is referencing defined global variables in patch binary
-                    auto ref_global_var = global_var_tree.find_global_var(reference->reference_address);
+                    GlobalVar* ref_global_var = global_var_map.find_global_var(reference->reference_address);
                     if (ref_global_var) {
                         if (ref_global_var->operation == OperationType::Ref) {
                             cs_insn* insn = nullptr;
@@ -438,7 +442,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                         continue;
                     }
 
-                    auto ref_function = function_tree.find_function(reference->reference_address);
+                    Function* ref_function = function_map.find_function(reference->reference_address);
                     if (ref_function) {
                         if (ref_function->operation == OperationType::Ref) {
                             cs_insn* insn = nullptr;
@@ -531,12 +535,12 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
 
         // Replace original functions with fix_ patched functions (install hook to new function)
         if (function->operation == OperationType::Fix) {
-            auto new_target_address = function->target_address + entrypoint_difference;
+            uint64_t new_target_address = function->target_address + entrypoint_difference;
             
             std::string new_instruction = "jmp " + decimal_to_hex(function->new_address - new_target_address);
 
-            std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);                  
-
+            std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction); 
+             
             output_binary->patch_address(new_target_address, new_instruction_bytes);
         }        
     }

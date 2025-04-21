@@ -12,6 +12,7 @@
 #include <libdwarf.h>
 #include <regex>
 #include <fcntl.h>
+#include <map>
 
 #include <capstone/capstone.h>
 #include <keystone/keystone.h>
@@ -38,117 +39,39 @@ struct GlobalVariableType {
     uint64_t element_count = 1;
 };
 
-class Node {
-    protected:
-        Node* left;
-        Node* right;
-
-    public:
-        Node() : left(nullptr), right(nullptr) {}
-        Node(Node* left, Node* right) : left(left), right(right) {}
-        virtual ~Node() {
-            delete left;
-            delete right;
-        }
-
-        Node* get_left() const { return left; }
-        Node* get_right() const { return right; }
-
-        void set_left(Node* node) { left = node; }
-        void set_right(Node* node) { right = node; }
-};
-
-class BinaryTree {
-    protected:
-        Node* root;
-
-    public:
-        BinaryTree() : root(nullptr) {}
-        virtual ~BinaryTree() {
-            delete root;
-            root = nullptr;
-        }
-};
-
 struct Reference {
     uint64_t address;
     uint64_t size;
     SymbolType reference_type;
     uint64_t reference_address;
+
+    Reference(uint64_t address, uint64_t size, SymbolType reference_type, uint64_t reference_address)
+        : address(address), size(size), reference_type(reference_type), reference_address(reference_address) {}
 };
 
-class ReferenceNode : public Node {
+class ReferenceMap {
     private:
-        Reference* reference;
+        std::map<uint64_t, std::unique_ptr<Reference>> reference_map;
 
     public:
-        ReferenceNode(Reference* reference) : Node(), reference(reference) {}
-        ~ReferenceNode() override {
-            delete reference;
-            reference = nullptr;
-        }
-        Reference* get_reference() const {
-            return reference;
-        }
-};
+        ReferenceMap() = default;
+        ~ReferenceMap() = default;
 
-class ReferenceTree : public BinaryTree {
-    public:
-        ReferenceTree() : BinaryTree() {}
-        ~ReferenceTree() override {}
-
-        void insert(ReferenceNode* node) {
-            if (root == nullptr) {
-                root = node;
-            } else {
-                insert(static_cast<ReferenceNode*>(root), node);
-            }
-        }
-
-        void insert(ReferenceNode* current, ReferenceNode* node) {
-            if (node->get_reference()->address < current->get_reference()->address) {
-                if (current->get_left() == nullptr) {
-                    current->set_left(node);
-                } else {
-                    insert(static_cast<ReferenceNode*>(current->get_left()), node);
-                }
-            } else {
-                if (current->get_right() == nullptr) {
-                    current->set_right(node);
-                } else {
-                    insert(static_cast<ReferenceNode*>(current->get_right()), node);
-                }
-            }
-        }
-
-        void traverse(ReferenceNode* node, std::vector<Reference*>& references) const {
-            if (node == nullptr) return;
-
-            traverse(static_cast<ReferenceNode*>(node->get_left()), references);
-            references.push_back(node->get_reference());
-            traverse(static_cast<ReferenceNode*>(node->get_right()), references);
-        }
-
-        std::vector<Reference*> get_references() const {
-            std::vector<Reference*> references;
-            if (root != nullptr) {
-                traverse(static_cast<ReferenceNode*>(root), references);
-            }
-            return references;
+        void insert(std::unique_ptr<Reference> ref) {
+            reference_map[ref->address] = std::move(ref);
         }
 
         Reference* find_reference(uint64_t address) const {
-            ReferenceNode* current = static_cast<ReferenceNode*>(root);
-            while (current != nullptr) {
-                if (current->get_reference()->address == address) {
-                    return current->get_reference();
-                } else if (address < current->get_reference()->address) {
-                    current = static_cast<ReferenceNode*>(current->get_left());
-                } else {
-                    current = static_cast<ReferenceNode*>(current->get_right());
-                }
+            auto it = reference_map.find(address);
+            return (it != reference_map.end()) ? it->second.get() : nullptr;
+        }
+
+        std::vector<Reference*> get_references() const {
+            std::vector<Reference*> result;
+            for (const auto& [_, ref_ptr] : reference_map) {
+                result.push_back(ref_ptr.get());
             }
-            return nullptr;
+            return result;
         }
 };
 
@@ -159,80 +82,34 @@ struct GlobalVar {
     uint64_t target_address;
     GlobalVariableType variable_type;
     uint64_t new_address;
+
+    GlobalVar(OperationType operation, uint64_t size, uint64_t patch_address, uint64_t target_address, GlobalVariableType variable_type, uint64_t new_address)
+        : operation(operation), size(size), patch_address(patch_address), target_address(target_address), variable_type(variable_type), new_address(new_address) {}
 };
 
-class GlobalVarNode : public Node {
+class GlobalVarMap {
     private:
-        GlobalVar* global_var;
+        std::map<uint64_t, std::unique_ptr<GlobalVar>> var_map;
 
     public:
-        GlobalVarNode(GlobalVar* global_var) : Node(), global_var(global_var) {}
-        ~GlobalVarNode() override {
-            delete global_var;
-            global_var = nullptr;
-        }
-        GlobalVar* get_global_var() const {
-            return global_var;
-        }
-};
+        GlobalVarMap() = default;
+        ~GlobalVarMap() = default;
 
-class GlobalVarTree : public BinaryTree {
-    public:
-        GlobalVarTree() : BinaryTree() {}
-        ~GlobalVarTree() override {}
-
-        void insert(GlobalVarNode* node) {
-            if (root == nullptr) {
-                root = node;
-            } else {
-                insert(static_cast<GlobalVarNode*>(root), node);
-            }
-        }
-
-        void insert(GlobalVarNode* current, GlobalVarNode* node) {
-            if (node->get_global_var()->patch_address < current->get_global_var()->patch_address) {
-                if (current->get_left() == nullptr) {
-                    current->set_left(node);
-                } else {
-                    insert(static_cast<GlobalVarNode*>(current->get_left()), node);
-                }
-            } else {
-                if (current->get_right() == nullptr) {
-                    current->set_right(node);
-                } else {
-                    insert(static_cast<GlobalVarNode*>(current->get_right()), node);
-                }
-            }
-        }
-
-        void traverse(GlobalVarNode* node, std::vector<GlobalVar*>& global_vars) const {
-            if (node == nullptr) return;
-
-            traverse(static_cast<GlobalVarNode*>(node->get_left()), global_vars);
-            global_vars.push_back(node->get_global_var());
-            traverse(static_cast<GlobalVarNode*>(node->get_right()), global_vars);
-        }
-
-        std::vector<GlobalVar*> get_global_vars() const {
-            std::vector<GlobalVar*> global_vars;
-            if (root != nullptr) {
-                traverse(static_cast<GlobalVarNode*>(root), global_vars);
-            }
-            return global_vars;
+        void insert(std::unique_ptr<GlobalVar> var) {
+            var_map[var->patch_address] = std::move(var);
         }
 
         GlobalVar* find_global_var(uint64_t address) const {
-            GlobalVarNode* current = static_cast<GlobalVarNode*>(root);
-            while (current != nullptr) {
-                if (current->get_global_var()->patch_address == address) {
-                    return current->get_global_var();
-                } else if (address < current->get_global_var()->patch_address) {
-                    current = static_cast<GlobalVarNode*>(current->get_left());
-                } else {
-                    current = static_cast<GlobalVarNode*>(current->get_right());
-                }
+            auto it = var_map.find(address);
+            return (it != var_map.end()) ? it->second.get() : nullptr;
+        }
+
+        std::vector<GlobalVar*> get_global_vars() const {
+            std::vector<GlobalVar*> result;
+            for (const auto& pair : var_map) {
+                result.push_back(pair.second.get());
             }
-            return nullptr;
+            return result;
         }
 };
 
@@ -241,82 +118,36 @@ struct Function {
     uint64_t size;
     uint64_t patch_address;
     uint64_t target_address;
-    std::unique_ptr<ReferenceTree> reference_table;
+    std::unique_ptr<ReferenceMap> reference_table;
     uint64_t new_address;
+
+    Function(OperationType operation, uint64_t size, uint64_t patch_address, uint64_t target_address, std::unique_ptr<ReferenceMap> reference_table, uint64_t new_address)
+        : operation(operation), size(size), patch_address(patch_address), target_address(target_address), reference_table(std::move(reference_table)), new_address(new_address) {}
 };
 
-class FunctionNode : public Node {
+class FunctionMap {
     private:
-        Function* function;
+        std::map<uint64_t, std::unique_ptr<Function>> function_map;
 
     public:
-        FunctionNode(Function* function) : Node(), function(function) {}
-        ~FunctionNode() override {
-            delete function;
-            function = nullptr;
-        }
-        Function* get_function() const {
-            return function;
-        }
-};
+        FunctionMap() = default;
+        ~FunctionMap() = default;
 
-class FunctionTree : public BinaryTree {
-    public:
-        FunctionTree() : BinaryTree() {}
-        ~FunctionTree() override {}
-
-        void insert(FunctionNode* node) {
-            if (root == nullptr) {
-                root = node;
-            } else {
-                insert(static_cast<FunctionNode*>(root), node);
-            }
-        }
-
-        void insert(FunctionNode* current, FunctionNode* node) {
-            if (node->get_function()->patch_address < current->get_function()->patch_address) {
-                if (current->get_left() == nullptr) {
-                    current->set_left(node);
-                } else {
-                    insert(static_cast<FunctionNode*>(current->get_left()), node);
-                }
-            } else {
-                if (current->get_right() == nullptr) {
-                    current->set_right(node);
-                } else {
-                    insert(static_cast<FunctionNode*>(current->get_right()), node);
-                }
-            }
-        }
-
-        void traverse(FunctionNode* node, std::vector<Function*>& functions) const {
-            if (node == nullptr) return;
-
-            traverse(static_cast<FunctionNode*>(node->get_left()), functions);
-            functions.push_back(node->get_function());
-            traverse(static_cast<FunctionNode*>(node->get_right()), functions);
-        }
-
-        std::vector<Function*> get_functions() const {
-            std::vector<Function*> functions;
-            if (root != nullptr) {
-                traverse(static_cast<FunctionNode*>(root), functions);
-            }
-            return functions;
+        void insert(std::unique_ptr<Function> func) {
+            function_map[func->patch_address] = std::move(func);
         }
 
         Function* find_function(uint64_t address) const {
-            FunctionNode* current = static_cast<FunctionNode*>(root);
-            while (current != nullptr) {
-                if (current->get_function()->patch_address == address) {
-                    return current->get_function();
-                } else if (address < current->get_function()->patch_address) {
-                    current = static_cast<FunctionNode*>(current->get_left());
-                } else {
-                    current = static_cast<FunctionNode*>(current->get_right());
-                }
+            auto it = function_map.find(address);
+            return (it != function_map.end()) ? it->second.get() : nullptr;
+        }
+
+        std::vector<Function*> get_functions() const {
+            std::vector<Function*> result;
+            for (const auto& [_, func_ptr] : function_map) {
+                result.push_back(func_ptr.get());
             }
-            return nullptr;
+            return result;
         }
 };
 
@@ -352,7 +183,6 @@ void print_help() {
     std::cout << "    \033[1;35mTARGET_BINARY\033[0m Path to the target binary" << std::endl;
     std::cout << "    \033[1;35mOUTPUT_BINARY\033[0m Path to the output binary" << std::endl;
 }
-
 void print_red(std::string output) { std::cout << "\033[1;31m[!]\033[0m " + output << std::endl; }
 void print_green(std::string output) { std::cout << "\033[1;32m[+]\033[0m " + output << std::endl; } 
 void print_yellow(std::string output) { std::cout << "\033[1;33m[?]\033[0m " + output << std::endl; }
@@ -419,7 +249,7 @@ std::string generate_random_string() {
 }
 
 // Extract global variables/functions references from a code section
-void extract_references(const std::vector<uint8_t>& code, uint64_t start_address, ReferenceTree& reference_tree) {
+void extract_references(const std::vector<uint8_t>& code, uint64_t start_address, ReferenceMap& reference_map) {
     csh handle;
     cs_insn* insn;
     size_t count;
@@ -462,11 +292,12 @@ void extract_references(const std::vector<uint8_t>& code, uint64_t start_address
                         continue;
                     }
 
-                    ReferenceNode* reference_node = new ReferenceNode(new Reference{
-                        instruction.address, instruction.size, SymbolType::Function, resolved_address
-                    });
-
-                    reference_tree.insert(reference_node);
+                    reference_map.insert(std::make_unique<Reference>(
+                        instruction.address,
+                        instruction.size,
+                        SymbolType::Function,
+                        resolved_address
+                    ));
                 }
 
                 else {
@@ -475,11 +306,12 @@ void extract_references(const std::vector<uint8_t>& code, uint64_t start_address
                         if (op.type == X86_OP_MEM && op.mem.base == X86_REG_RIP) {
                             uint64_t resolved_address = instruction.address + instruction.size + op.mem.disp;
 
-                            ReferenceNode* reference_node = new ReferenceNode(new Reference{
-                                instruction.address, instruction.size, SymbolType::GlobalVariable, resolved_address
-                            });
-
-                            reference_tree.insert(reference_node);
+                            reference_map.insert(std::make_unique<Reference>(
+                                instruction.address,
+                                instruction.size,
+                                SymbolType::GlobalVariable,
+                                resolved_address
+                            ));
                         }
                     }
                 }

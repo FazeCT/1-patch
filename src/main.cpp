@@ -53,11 +53,11 @@ int main(int argc, char* argv[]) {
     std::cout << "\n\033[1;32m[Parse]\033[0m" << std::endl;
 
     // Contains global variables and functions in patch binary
-    GlobalVarTree global_var_tree;
-    FunctionTree function_tree;
+    GlobalVarMap global_var_map;
+    FunctionMap function_map;
 
     try {
-        parse_patch_binary(patch_binary_path, global_var_tree, function_tree);
+        parse_patch_binary(patch_binary_path, global_var_map, function_map);
     } catch (const std::runtime_error& e) {
         print_red("1-patch: " + std::string(e.what()));
         return 1;
@@ -74,7 +74,7 @@ int main(int argc, char* argv[]) {
     std::string new_section_indicator;
 
     try {
-        new_section_indicator = merge_binary(patch_binary_path, target_binary_path, output_binary_path, global_var_tree, function_tree);
+        new_section_indicator = merge_binary(patch_binary_path, target_binary_path, output_binary_path, global_var_map, function_map);
     } catch (const std::runtime_error& e) {
         print_red("1-patch: " + std::string(e.what()));
         return 1;
@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
     std::cout << "\n\033[1;32m[Relocate]\033[0m" << std::endl;
 
     try {
-        relocate(patch_binary_path, target_binary_path, output_binary_path, global_var_tree, function_tree, new_section_indicator);
+        relocate(patch_binary_path, target_binary_path, output_binary_path, global_var_map, function_map, new_section_indicator);
     } catch (const std::runtime_error& e) {
         print_red("1-patch: " + std::string(e.what()));
         return 1;

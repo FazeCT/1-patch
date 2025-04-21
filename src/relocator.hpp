@@ -138,9 +138,14 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
 
     // Find new address of functions
     for (auto& function : function_map.get_functions()) {
+        if (function->operation != OperationType::Ref) {
             uint64_t new_text_section_address = output_binary->get_section(".text." + new_section_indicator)->virtual_address();
             function->new_address += new_text_section_address;
         }
+        else {
+            function->new_address = function->target_address + entrypoint_difference;
+        }
+    }
 
 
     // Find new address of global variables
@@ -152,6 +157,9 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
             uint64_t new_address = output_binary->get_section(assoc_section->name() + "." + new_section_indicator)->virtual_address() + offset_in_section;
 
             global_var->new_address = new_address;
+        }
+        else {
+            global_var->new_address = global_var->target_address + entrypoint_difference;
         }
     }
 
@@ -293,97 +301,49 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                     // Check if it is referencing defined global variables in patch binary
                     GlobalVar* ref_global_var = global_var_map.find_global_var(reference->reference_address);
                     if (ref_global_var) {
-                        if (ref_global_var->operation == OperationType::Ref) {
-                            cs_insn* insn = nullptr;
-                            auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
-                            std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
-                            
-                            size_t count = cs_disasm(handle, instruction_bytes.data(), instruction_bytes.size(), reference->address, 0, &insn);
+                        cs_insn* insn = nullptr;
+                        auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
+                        std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
+                        
+                        size_t count = cs_disasm(handle, instruction_bytes.data(), instruction_bytes.size(), reference->address, 0, &insn);
 
-                            if (count > 0) {
-                                const cs_detail* detail = insn[0].detail;
-                                cs_insn& instruction = insn[0];
-                                if (detail) {
-                                    uint64_t instruction_address = reference->address - function->patch_address + function->new_address;
-                                    std::string new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
+                        if (count > 0) {
+                            const cs_detail* detail = insn[0].detail;
+                            cs_insn& instruction = insn[0];
+                            if (detail) {
+                                uint64_t instruction_address = reference->address - function->patch_address + function->new_address;
+                                std::string new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;;
 
-                                    // Memory on LHS
-                                    if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
-                                        uint32_t new_disp = ref_global_var->target_address + entrypoint_difference - instruction_address - instruction.size;
-                                        uint32_t old_disp = detail->x86.operands[0].mem.disp;                            
-                                        size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                                        if (disp_pos != std::string::npos) {
-                                            new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
-                                        }
-                                    }
-
-                                    // Memory on RHS
-                                    else if (detail->x86.operands[1].type == X86_OP_MEM && detail->x86.operands[1].mem.base == X86_REG_RIP) {
-                                        uint32_t new_disp = ref_global_var->target_address + entrypoint_difference - instruction_address - instruction.size;
-                                        uint32_t old_disp = detail->x86.operands[1].mem.disp;
-                                
-                                        size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                                        if (disp_pos != std::string::npos) {
-                                            new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
-                                        }
-                                    }
-
-                                    try {
-                                        std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);
-                                        output_binary->patch_address(instruction_address, new_instruction_bytes);
-                                    } catch (const std::exception& e) {
-                                        throw std::runtime_error("Relocator failed");
+                                // Memory on LHS
+                                if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
+                                    uint32_t new_disp = ref_global_var->new_address - instruction_address - instruction.size;
+                                    uint32_t old_disp = detail->x86.operands[0].mem.disp;                            
+                                    size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
+                                    if (disp_pos != std::string::npos) {
+                                        new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
                                     }
                                 }
-                            }
-                            cs_free(insn, count);
-                        }
- 
-                        else if (ref_global_var->operation == OperationType::Add || ref_global_var->operation == OperationType::Fix) {
-                            cs_insn* insn = nullptr;
-                            auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
-                            std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
+
+                                // Memory on RHS
+                                else if (detail->x86.operands[1].type == X86_OP_MEM && detail->x86.operands[1].mem.base == X86_REG_RIP) {
+                                    uint32_t new_disp = ref_global_var->new_address - instruction_address - instruction.size;
+                                    uint32_t old_disp = detail->x86.operands[1].mem.disp;
                             
-                            size_t count = cs_disasm(handle, instruction_bytes.data(), instruction_bytes.size(), reference->address, 0, &insn);
-
-                            if (count > 0) {
-                                const cs_detail* detail = insn[0].detail;
-                                cs_insn& instruction = insn[0];
-                                if (detail) {
-                                    uint64_t instruction_address = reference->address - function->patch_address + function->new_address;
-                                    std::string new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;;
-
-                                    // Memory on LHS
-                                    if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
-                                        uint32_t new_disp = ref_global_var->new_address - instruction_address - instruction.size;
-                                        uint32_t old_disp = detail->x86.operands[0].mem.disp;                            
-                                        size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                                        if (disp_pos != std::string::npos) {
-                                            new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
-                                        }
-                                    }
-
-                                    // Memory on RHS
-                                    else if (detail->x86.operands[1].type == X86_OP_MEM && detail->x86.operands[1].mem.base == X86_REG_RIP) {
-                                        uint32_t new_disp = ref_global_var->new_address - instruction_address - instruction.size;
-                                        uint32_t old_disp = detail->x86.operands[1].mem.disp;
-                                
-                                        size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                                        if (disp_pos != std::string::npos) {
-                                            new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
-                                        }
-                                    }
-
-                                    try {
-                                        std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);
-                                        output_binary->patch_address(instruction_address, new_instruction_bytes);
-                                    } catch (const std::exception& e) {
-                                        throw std::runtime_error("Relocator failed");
+                                    size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
+                                    if (disp_pos != std::string::npos) {
+                                        new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
                                     }
                                 }
+
+                                try {
+                                    std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);
+                                    output_binary->patch_address(instruction_address, new_instruction_bytes);
+                                } catch (const std::exception& e) {
+                                    throw std::runtime_error("Relocator failed");
+                                }
                             }
-                            cs_free(insn, count);
                         }
+                        cs_free(insn, count);
                     } else {
                         print_red("Failed to query for global variable at " + decimal_to_hex(reference->reference_address) + " in patch binary");
                         throw std::runtime_error("Relocator failed");
@@ -444,90 +404,46 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
 
                     Function* ref_function = function_map.find_function(reference->reference_address);
                     if (ref_function) {
-                        if (ref_function->operation == OperationType::Ref) {
-                            cs_insn* insn = nullptr;
-                            auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
-                            std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
+                        cs_insn* insn = nullptr;
+                        auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
+                        std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
 
-                            size_t count = cs_disasm(handle, instruction_bytes.data(), instruction_bytes.size(), reference->address, 0, &insn);
-                            if (count > 0) {
-                                const cs_detail* detail = insn[0].detail;
-                                cs_insn& instruction = insn[0];
-                                if (detail) {
-                                    uint64_t instruction_address = reference->address - function->patch_address + function->new_address;
-                                    std::string new_instruction;
+                        size_t count = cs_disasm(handle, instruction_bytes.data(), instruction_bytes.size(), reference->address, 0, &insn);
+                        if (count > 0) {
+                            const cs_detail* detail = insn[0].detail;
+                            cs_insn& instruction = insn[0];
+                            if (detail) {
+                                uint64_t instruction_address = reference->address - function->patch_address + function->new_address;
+                                std::string new_instruction;
 
-                                    if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
-                                        uint32_t new_disp = ref_function->target_address + entrypoint_difference - instruction_address - instruction.size;
-                                        uint32_t old_disp = detail->x86.operands[0].mem.disp;
+                                if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
+                                    uint32_t new_disp = ref_function->new_address - instruction_address - instruction.size;
+                                    uint32_t old_disp = detail->x86.operands[0].mem.disp;
 
-                                        new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
-                                
-                                        size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                                        if (disp_pos != std::string::npos) {
-                                            new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
-                                        }
-                                    }
-
-                                    else if (detail->x86.operands[0].type == X86_OP_IMM) {
-                                        uint32_t new_disp = ref_function->target_address + entrypoint_difference - instruction_address;
-                                        new_instruction = std::string(instruction.mnemonic) + " " + decimal_to_hex(new_disp);  
-                                    }
-
-                                    try {
-                                        std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);
-                                        output_binary->patch_address(instruction_address, new_instruction_bytes);
-                                    } catch (const std::exception& e) {
-                                        throw std::runtime_error("Relocator failed");
+                                    new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
+                            
+                                    size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
+                                    if (disp_pos != std::string::npos) {
+                                        new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
                                     }
                                 }
-                            }
-                            cs_free(insn, count);
-                        }
 
-                        else if (ref_function->operation == OperationType::Add || ref_function->operation == OperationType::Fix) {
-                            cs_insn* insn = nullptr;
-                            auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
-                            std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
+                                else if (detail->x86.operands[0].type == X86_OP_IMM) {
+                                    uint32_t new_disp = ref_function->new_address - instruction_address;
+                                    new_instruction = std::string(instruction.mnemonic) + " " + decimal_to_hex(new_disp);  
+                                }
 
-                            size_t count = cs_disasm(handle, instruction_bytes.data(), instruction_bytes.size(), reference->address, 0, &insn);
-                            if (count > 0) {
-                                const cs_detail* detail = insn[0].detail;
-                                cs_insn& instruction = insn[0];
-                                if (detail) {
-                                    uint64_t instruction_address = reference->address - function->patch_address + function->new_address;
-                                    std::string new_instruction;
-
-                                    if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
-                                        uint32_t new_disp = ref_function->new_address - instruction_address - instruction.size;
-                                        uint32_t old_disp = detail->x86.operands[0].mem.disp;
-
-                                        new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
-                                
-                                        size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                                        if (disp_pos != std::string::npos) {
-                                            new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
-                                        }
-                                    }
-
-                                    else if (detail->x86.operands[0].type == X86_OP_IMM) {
-                                        uint32_t new_disp = ref_function->new_address - instruction_address;
-                                        new_instruction = std::string(instruction.mnemonic) + " " + decimal_to_hex(new_disp);  
-                                    }
-
-                                    try {
-                                        std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);
-                                        output_binary->patch_address(instruction_address, new_instruction_bytes);
-                                    } catch (const std::exception& e) {
-                                        throw std::runtime_error("Relocator failed");
-                                    }
+                                try {
+                                    std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);
+                                    output_binary->patch_address(instruction_address, new_instruction_bytes);
+                                } catch (const std::exception& e) {
+                                    throw std::runtime_error("Relocator failed");
                                 }
                             }
-                            cs_free(insn, count);
                         }
+                        cs_free(insn, count);
                     } else {
                         print_red("Failed to query for function at " + decimal_to_hex(reference->reference_address) + " in patch binary");
-                        // throw std::runtime_error("Relocator failed");
                     }
                 }
             }
@@ -536,11 +452,8 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
         // Replace original functions with fix_ patched functions (install hook to new function)
         if (function->operation == OperationType::Fix) {
             uint64_t new_target_address = function->target_address + entrypoint_difference;
-            
             std::string new_instruction = "jmp " + decimal_to_hex(function->new_address - new_target_address);
-
             std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction); 
-             
             output_binary->patch_address(new_target_address, new_instruction_bytes);
         }        
     }
@@ -548,7 +461,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
     cs_close(&handle);
     std::cout << "\033[1;32m[+]\033[0m Relocated all functions" << std::endl;
 
-    // Finally, update addend of RELATIVE relocations
+    // Update addend of RELATIVE relocations
     for (LIEF::ELF::Relocation& r : output_binary->dynamic_relocations()) {
         if (r.type() == LIEF::ELF::Relocation::TYPE::X86_64_RELATIVE) {
             auto addend_vector = output_binary->get_content_from_virtual_address(r.address(), 8);

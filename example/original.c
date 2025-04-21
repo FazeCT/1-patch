@@ -1,18 +1,26 @@
 #include <stdio.h>
 
-int GLOBAL_VAR = 1000;
-int GLOBAL_VAR_2 = 2000;
+const short PRICE = 1337;
+long long BALANCE = 1000;
 
-void hello_world() {
-    printf("%s\n", "hello_world");
-}
-
-int add(int a, int b) {
-    hello_world();
-    return a + b;
+int handle_buying(short count) {
+    return count * PRICE;
 }
 
 int main() {
-    printf("%d\n", add(GLOBAL_VAR, GLOBAL_VAR_2));
-    printf("%d\n", GLOBAL_VAR);
+    short count;
+    int total_cost;
+
+    printf("Welcome to the shop! We sell items for $%d each.\n", PRICE);
+    printf("How many items would you like to buy? ");
+    scanf("%hd", &count);
+    
+    total_cost = handle_buying(count);
+
+    if (total_cost > BALANCE) {
+        printf("You don't have enough money to buy that many items!\n");
+    } else {
+        BALANCE -= total_cost;
+        printf("You bought %d items. Your new balance is $%lld.\n", count, BALANCE);
+    }
 }

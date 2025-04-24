@@ -57,7 +57,7 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarMap& glob
             DWARFResolver resolver(patch_binary_path);
 
             GlobalVariableType variable_type = resolver.resolve(symbol_name);
-            uint64_t variable_size = symbol.size() / variable_type.element_count;
+            uint64_t variable_size = variable_type.element_count > 0? symbol.size() / variable_type.element_count : symbol.size();
 
             global_var_map.insert(std::make_unique<GlobalVar>(
                 operation,

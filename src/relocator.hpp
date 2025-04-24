@@ -147,7 +147,6 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
         }
     }
 
-
     // Find new address of global variables
     for (auto& global_var : global_var_map.get_global_vars()) {
         if (global_var->operation != OperationType::Ref) {
@@ -244,60 +243,6 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
             for (auto& reference : function->reference_table->get_references()) {
                 // ref_ global variables
                 if (reference->reference_type == SymbolType::GlobalVariable) {
-
-                    // Check if it is referencing read-only data
-                    LIEF::ELF::Section* original_section = patch_binary->section_from_virtual_address(reference->reference_address);
-                    if (original_section && original_section->name() == ".rodata") {
-                        uint64_t new_rodata_variable_address = output_binary->get_section(".rodata." + new_section_indicator)->virtual_address() + reference->reference_address - original_section->virtual_address();
-
-                        cs_insn* insn = nullptr;
-                        auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
-                        std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
-                        
-                        size_t count = cs_disasm(handle, instruction_bytes.data(), instruction_bytes.size(), reference->address, 0, &insn);
-
-                        if (count > 0) {
-                            const cs_detail* detail = insn[0].detail;
-                            cs_insn& instruction = insn[0];
-                            if (detail) {
-                                uint64_t instruction_address = reference->address - function->patch_address + function->new_address;
-                                std::string new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
-
-                                // Memory on LHS
-                                if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
-                                    uint32_t new_disp = new_rodata_variable_address - instruction_address - instruction.size;
-                                    uint32_t old_disp = detail->x86.operands[0].mem.disp;                            
-                                    size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                                    if (disp_pos != std::string::npos) {
-                                        new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
-                                    }
-                                }
-
-                                // Memory on RHS
-                                else if (detail->x86.operands[1].type == X86_OP_MEM && detail->x86.operands[1].mem.base == X86_REG_RIP) {
-                                    uint32_t new_disp = new_rodata_variable_address - instruction_address - instruction.size;
-                                    uint32_t old_disp = detail->x86.operands[1].mem.disp;
-                            
-                                    size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                                    if (disp_pos != std::string::npos) {
-                                        new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
-                                    }
-                                }
-
-                                try {
-                                    std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);
-                                    output_binary->patch_address(instruction_address, new_instruction_bytes);
-                                } catch (const std::exception& e) {
-                                    throw std::runtime_error("Relocator failed");
-                                }
-                            }
-                        }
-                        cs_free(insn, count);
-
-                        // Skip the below check
-                        continue;
-                    }
-
                     // Check if it is referencing defined global variables in patch binary
                     GlobalVar* ref_global_var = global_var_map.find_global_var(reference->reference_address);
                     if (ref_global_var) {
@@ -312,7 +257,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                             cs_insn& instruction = insn[0];
                             if (detail) {
                                 uint64_t instruction_address = reference->address - function->patch_address + function->new_address;
-                                std::string new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;;
+                                std::string new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
 
                                 // Memory on LHS
                                 if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
@@ -345,6 +290,56 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                         }
                         cs_free(insn, count);
                     } else {
+                        // Check if it is referencing read-only data
+                        LIEF::ELF::Section* original_section = patch_binary->section_from_virtual_address(reference->reference_address);
+                        if (original_section && original_section->name() == ".rodata") {
+                            uint64_t new_rodata_variable_address = output_binary->get_section(".rodata." + new_section_indicator)->virtual_address() + reference->reference_address - original_section->virtual_address();
+
+                            cs_insn* insn = nullptr;
+                            auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
+                            std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
+                            
+                            size_t count = cs_disasm(handle, instruction_bytes.data(), instruction_bytes.size(), reference->address, 0, &insn);
+
+                            if (count > 0) {
+                                const cs_detail* detail = insn[0].detail;
+                                cs_insn& instruction = insn[0];
+                                if (detail) {
+                                    uint64_t instruction_address = reference->address - function->patch_address + function->new_address;
+                                    std::string new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
+
+                                    // Memory on LHS
+                                    if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
+                                        uint32_t new_disp = new_rodata_variable_address - instruction_address - instruction.size;
+                                        uint32_t old_disp = detail->x86.operands[0].mem.disp;                            
+                                        size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
+                                        if (disp_pos != std::string::npos) {
+                                            new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
+                                        }
+                                    }
+
+                                    // Memory on RHS
+                                    else if (detail->x86.operands[1].type == X86_OP_MEM && detail->x86.operands[1].mem.base == X86_REG_RIP) {
+                                        uint32_t new_disp = new_rodata_variable_address - instruction_address - instruction.size;
+                                        uint32_t old_disp = detail->x86.operands[1].mem.disp;
+                                
+                                        size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
+                                        if (disp_pos != std::string::npos) {
+                                            new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
+                                        }
+                                    }
+
+                                    try {
+                                        std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction);
+                                        output_binary->patch_address(instruction_address, new_instruction_bytes);
+                                    } catch (const std::exception& e) {
+                                        throw std::runtime_error("Relocator failed");
+                                    }
+                                }
+                            }
+                            cs_free(insn, count);
+                            continue;
+                        }
                         print_red("Failed to query for global variable at " + decimal_to_hex(reference->reference_address) + " in patch binary");
                         throw std::runtime_error("Relocator failed");
                     }

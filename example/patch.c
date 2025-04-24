@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-long long ref_0x4010_itsjoever;
+long long ref_0x4010_random_string;
 const char ref_0x2010[];
 const char ref_0x2048[];
 const char ref_0x2078[];
@@ -19,11 +19,11 @@ volatile int fix_0x11C6() {
 
     if (count < 0) {
         printf("You can't buy a negative amount of items!\n");
-    } else if (total_cost > ref_0x4010_itsjoever) {
+    } else if (total_cost > ref_0x4010_random_string) {
         printf("%s",ref_0x2078);
     } else {
-        ref_0x4010_itsjoever -= total_cost;
-        printf(ref_0x20B0, count, ref_0x4010_itsjoever);
+        ref_0x4010_random_string -= total_cost;
+        printf(ref_0x20B0, count, ref_0x4010_random_string);
     }
     return 0;
 }

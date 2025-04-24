@@ -45,7 +45,5 @@ run_patched_golang:
 .PHONY: original build run_original run_thesis run_patched clean
 
 clean:
-	@rm -f example/original
-	@rm -f example/original_patched
 	@rm -f example/original_go
 	@rm -f example/original_go_patched

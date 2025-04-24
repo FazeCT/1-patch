@@ -44,7 +44,7 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarMap& glob
         uint64_t target_address = UINT64_MAX;
 
         if (operation != OperationType::Add) {
-            target_address = hex_to_decimal(symbol_name.substr(4));
+            target_address = parse_address(symbol_name.substr(4));
             if (target_address == UINT64_MAX) {
                 print_yellow("Target address for " + symbol_name + " cannot be resolved -> skipped");
                 continue;

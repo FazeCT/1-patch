@@ -188,16 +188,20 @@ void print_green(std::string output) { std::cout << "\033[1;32m[+]\033[0m " + ou
 void print_yellow(std::string output) { std::cout << "\033[1;33m[?]\033[0m " + output << std::endl; }
 void print_blue(std::string output) { std::cout << "\033[1;36m[-]\033[0m " + output << std::endl; }
 
-// Convert hexadecimal to decimal
-uint64_t hex_to_decimal(const std::string& hex) {
-    static const std::regex hex_pattern(R"(^0x[0-9a-fA-F]+$|^[0-9a-fA-F]+$)");
+// Parse the target address of a patch in patch binary
+uint64_t parse_address(const std::string& hex) {
+    // [valid hexadecimal]_[optional string]
+    static const std::regex hex_pattern(R"(^0x[0-9a-fA-F]+(_.*)?$|^[0-9a-fA-F]+(_.*)?$)");
 
     if (!std::regex_match(hex, hex_pattern)) {
         return UINT64_MAX;
     }
 
     try {
-        return std::stoull(hex, nullptr, 16);
+        size_t underscore_pos = hex.find('_');
+        std::string valid_hex = (underscore_pos == std::string::npos) ? hex : hex.substr(0, underscore_pos);
+
+        return std::stoull(valid_hex, nullptr, 16);
     } catch (...) {
         return UINT64_MAX;
     }

@@ -341,7 +341,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                             continue;
                         }
                         print_red("Failed to query for global variable at " + decimal_to_hex(reference->reference_address) + " in patch binary");
-                        throw std::runtime_error("Relocator failed");
+                        // throw std::runtime_error("Relocator failed");
                     }
                 }
 

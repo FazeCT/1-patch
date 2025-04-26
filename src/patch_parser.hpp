@@ -54,34 +54,52 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarMap& glob
         print_blue("Found symbol " + symbol_name);
 
         if (symbol.is_variable()) {
-            DWARFResolver resolver(patch_binary_path);
+            if (operation != OperationType::Ref){
+                DWARFResolver resolver(patch_binary_path);
 
-            GlobalVariableType variable_type = resolver.resolve(symbol_name);
-            uint64_t variable_size = variable_type.element_count > 0? symbol.size() / variable_type.element_count : symbol.size();
-
-            global_var_map.insert(std::make_unique<GlobalVar>(
-                operation,
-                variable_size,
-                patch_address,
-                target_address,
-                variable_type,
-                UINT64_MAX
-            ));
-
-            // Also insert all elements of the array
-            for (int i = 1; i < variable_type.element_count; ++i) {
-                GlobalVariableType element_type;
-
-                element_type.primitive = variable_type.primitive;
-                element_type.pointer_depth = variable_type.pointer_depth;
-                element_type.is_array = false;
-                element_type.element_count = 1;
-
+                GlobalVariableType variable_type = resolver.resolve(symbol_name);
+                uint64_t variable_size = variable_type.element_count > 0? symbol.size() / variable_type.element_count : symbol.size();
+        
                 global_var_map.insert(std::make_unique<GlobalVar>(
                     operation,
                     variable_size,
-                    patch_address + i * variable_size, 
-                    target_address + i * variable_size, 
+                    patch_address,
+                    target_address,
+                    variable_type,
+                    UINT64_MAX
+                ));
+
+                // Also insert all elements of the array
+                for (int i = 1; i < variable_type.element_count; ++i) {
+                    GlobalVariableType element_type;
+
+                    element_type.primitive = variable_type.primitive;
+                    element_type.pointer_depth = variable_type.pointer_depth;
+                    element_type.is_array = false;
+                    element_type.element_count = 1;
+
+                    global_var_map.insert(std::make_unique<GlobalVar>(
+                        operation,
+                        variable_size,
+                        patch_address + i * variable_size, 
+                        target_address + i * variable_size, 
+                        element_type,
+                        UINT64_MAX
+                    ));
+                }
+            } else {
+                GlobalVariableType element_type;
+
+                element_type.primitive = "none";
+                element_type.pointer_depth = 0;
+                element_type.is_array = false;
+                element_type.element_count = 0;
+
+                global_var_map.insert(std::make_unique<GlobalVar>(
+                    operation,
+                    symbol.size(),
+                    patch_address,
+                    target_address,
                     element_type,
                     UINT64_MAX
                 ));
@@ -89,20 +107,33 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarMap& glob
         }
 
         else if (symbol.is_function()) {
-            auto function_code = patch_binary->get_content_from_virtual_address(patch_address, symbol.size());
+            if (operation != OperationType::Ref) {
+                auto function_code = patch_binary->get_content_from_virtual_address(patch_address, symbol.size());
 
-            // Get all references of the function
-            std::unique_ptr<ReferenceMap> reference_table = std::make_unique<ReferenceMap>();
-            extract_references(std::vector<uint8_t>(function_code.begin(), function_code.end()), patch_address, *reference_table);
+                // Get all references of the function
+                std::unique_ptr<ReferenceMap> reference_table = std::make_unique<ReferenceMap>();
+                extract_references(std::vector<uint8_t>(function_code.begin(), function_code.end()), patch_address, *reference_table);
 
-            function_map.insert(std::make_unique<Function>(
-                operation, 
-                symbol.size(), 
-                patch_address, 
-                target_address, 
-                std::move(reference_table),
-                UINT64_MAX
-            ));
+                function_map.insert(std::make_unique<Function>(
+                    operation, 
+                    symbol.size(), 
+                    patch_address, 
+                    target_address, 
+                    std::move(reference_table),
+                    UINT64_MAX
+                ));
+            } else {
+                std::unique_ptr<ReferenceMap> empty_reference_table = std::make_unique<ReferenceMap>();
+
+                function_map.insert(std::make_unique<Function>(
+                    operation, 
+                    symbol.size(), 
+                    patch_address, 
+                    target_address, 
+                    std::move(empty_reference_table),
+                    UINT64_MAX
+                ));
+            }
         }
 
         else {

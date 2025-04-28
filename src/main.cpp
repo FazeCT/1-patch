@@ -5,6 +5,7 @@
 #include "utils.hpp"
 #include "compiler.hpp"
 #include "patch_parser.hpp"
+#include "target_parser.hpp"
 #include "merger.hpp"
 #include "relocator.hpp"
 
@@ -50,7 +51,7 @@ int main(int argc, char* argv[]) {
 
     print_green("Done.");
 
-    std::cout << "\n\033[1;32m[Parse]\033[0m" << std::endl;
+    std::cout << "\n\033[1;32m[Parse patch]\033[0m" << std::endl;
 
     // Contains global variables and functions in patch binary
     GlobalVarMap global_var_map;
@@ -65,6 +66,19 @@ int main(int argc, char* argv[]) {
 
     if (output_binary_path.empty()) {
         output_binary_path = target_binary_path + "_patched";
+    }
+
+    print_green("Done.");
+
+    std::cout << "\n\033[1;32m[Parse target]\033[0m" << std::endl;
+
+    ReferenceMap reference_map;
+
+    try {
+        parse_target_binary(target_binary_path, reference_map);
+    } catch (const std::runtime_error& e) {
+        print_red("1-patch: " + std::string(e.what()));
+        return 1;
     }
 
     print_green("Done.");
@@ -85,7 +99,7 @@ int main(int argc, char* argv[]) {
     std::cout << "\n\033[1;32m[Relocate]\033[0m" << std::endl;
 
     try {
-        relocate(patch_binary_path, target_binary_path, output_binary_path, global_var_map, function_map, new_section_indicator);
+        relocate(patch_binary_path, target_binary_path, output_binary_path, global_var_map, function_map, reference_map, new_section_indicator);
     } catch (const std::runtime_error& e) {
         print_red("1-patch: " + std::string(e.what()));
         return 1;

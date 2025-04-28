@@ -51,7 +51,9 @@ int main(int argc, char* argv[]) {
 
     print_green("Done.");
 
-    std::cout << "\n\033[1;32m[Parse patch]\033[0m" << std::endl;
+    std::cout << "\n\033[1;32m[Parse]\033[0m" << std::endl;
+
+    print_blue("Parsing patch binary at" + patch_binary_path);
 
     // Contains global variables and functions in patch binary
     GlobalVarMap global_var_map;
@@ -68,9 +70,7 @@ int main(int argc, char* argv[]) {
         output_binary_path = target_binary_path + "_patched";
     }
 
-    print_green("Done.");
-
-    std::cout << "\n\033[1;32m[Parse target]\033[0m" << std::endl;
+    print_blue("Parsing target binary at" + target_binary_path);
 
     ReferenceMap reference_map;
 

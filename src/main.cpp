@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
         output_binary_path = target_binary_path + "_patched";
     }
 
-    print_blue("Parsing target binary at" + target_binary_path);
+    print_blue("Parsing target binary at " + target_binary_path);
 
     ReferenceMap reference_map;
 

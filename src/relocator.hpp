@@ -333,7 +333,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
             output_binary->patch_address(global_var->target_address + entrypoint_difference, std::vector<uint8_t>(new_value.begin(), new_value.end()));
         }
 
-        verbose_print::print_green("Relocated global variable at 0x" + decimal_to_hex(global_var->patch_address) + " of patch binary");
+        verbose_print::print_green("Relocated global variable at " + decimal_to_hex(global_var->patch_address) + " of patch binary");
     }   
     
     // Relocate functions
@@ -404,7 +404,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
             output_binary->patch_address(new_target_address, new_instruction_bytes);
         } 
 
-        verbose_print::print_green("Relocated function at 0x" + decimal_to_hex(function->patch_address) + " of patch binary");       
+        verbose_print::print_green("Relocated function at " + decimal_to_hex(function->patch_address) + " of patch binary");       
     }
     
     cs_close(&handle);

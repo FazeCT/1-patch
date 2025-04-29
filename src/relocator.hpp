@@ -153,7 +153,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
 
             got_entries[rel.address()] = entry_address;
 
-            print_green("Mapped symbol " + new_symbol.name() + " to target binary");
+            verbose_print::print_green("Mapped symbol " + new_symbol.name() + " to target binary");
         }
     }
 
@@ -174,8 +174,6 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
             output_binary->add_dynamic_relocation(new_rel);
         }
     }
-
-    std::cout << "\033[1;32m[+]\033[0m Relocated .rela.dyn RELATIVE entries" << std::endl;
 
     // Relocate content of .plt.sec section if exists
     if (patch_binary->has_section(".plt.sec")) {
@@ -230,11 +228,10 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
             }
         }
         cs_free(insn, count);
+        verbose_print::print_green("Relocated .plt.sec entries");
     }
 
     output_binary->write(output_binary_path);
-
-    std::cout << "\033[1;32m[+]\033[0m Relocated .got and .plt entries" << std::endl;
 
     // The above part pushed the target binary down
     uint64_t entrypoint_difference = output_binary->header().entrypoint() - target_binary->header().entrypoint();
@@ -335,9 +332,9 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
             auto new_value = patch_binary->get_content_from_virtual_address(global_var->patch_address, global_var->size);
             output_binary->patch_address(global_var->target_address + entrypoint_difference, std::vector<uint8_t>(new_value.begin(), new_value.end()));
         }
-    }   
 
-    std::cout << "\033[1;32m[+]\033[0m Relocated all global variables" << std::endl;
+        verbose_print::print_green("Relocated global variable at 0x" + decimal_to_hex(global_var->patch_address) + " of patch binary");
+    }   
     
     // Relocate functions
     for (auto& function : function_map.get_functions()) {
@@ -365,7 +362,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                             patch_global_var_ref(handle, patch_binary, output_binary, instruction_bytes, reference->address, function->patch_address, function->new_address, new_rodata_variable_address);
                             continue;
                         }
-                        print_red("Failed to query for global variable at " + decimal_to_hex(reference->reference_address) + " in patch binary");
+                        verbose_print::print_red("Failed to query for global variable at " + decimal_to_hex(reference->reference_address) + " in patch binary");
                     }
                 }
 
@@ -393,7 +390,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                         patch_function_ref(handle, patch_binary, output_binary, instruction_bytes, reference->address, function->patch_address, function->new_address, ref_function->new_address);
                     
                     } else {
-                        print_red("Failed to query for function at " + decimal_to_hex(reference->reference_address) + " in patch binary");
+                        verbose_print::print_red("Failed to query for function at " + decimal_to_hex(reference->reference_address) + " in patch binary");
                     }
                 }
             }
@@ -405,11 +402,12 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
             std::string new_instruction = "jmp " + decimal_to_hex(function->new_address - new_target_address);
             std::vector<uint8_t> new_instruction_bytes = assemble_instruction(new_instruction); 
             output_binary->patch_address(new_target_address, new_instruction_bytes);
-        }        
+        } 
+
+        verbose_print::print_green("Relocated function at 0x" + decimal_to_hex(function->patch_address) + " of patch binary");       
     }
     
     cs_close(&handle);
-    std::cout << "\033[1;32m[+]\033[0m Relocated all functions" << std::endl;
 
     // Update addend of RELATIVE relocations
     for (LIEF::ELF::Relocation& r : output_binary->dynamic_relocations()) {
@@ -418,8 +416,6 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
             r.addend(vector_to_int(std::vector<uint8_t>(addend_vector.begin(), addend_vector.end())));
         }
     }
-
-    std::cout << "\033[1;32m[+]\033[0m Updated .rela.dyn RELATIVE addends" << std::endl;
 
     output_binary->write(output_binary_path);
 }

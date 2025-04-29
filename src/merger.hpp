@@ -13,13 +13,13 @@ std::vector<std::string> get_shared_libraries(const std::string& binary_path) {
 
     std::unique_ptr<LIEF::ELF::Binary> binary = LIEF::ELF::Parser::parse(binary_path);
     if (!binary) {
-        print_red("Failed to parse binary: " + binary_path);
+        verbose_print::print_red("Failed to parse binary: " + binary_path);
         return libraries;
     }
 
     LIEF::ELF::Section* dynamic_string_section = binary->get_section(".dynstr");
     if (!dynamic_string_section) {
-        print_red("Failed to find .dynstr section in " + binary_path);
+        verbose_print::print_red("Failed to find .dynstr section in " + binary_path);
         return libraries;
     }
 
@@ -54,7 +54,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     std::unique_ptr<LIEF::ELF::Binary> patch_binary = LIEF::ELF::Parser::parse(patch_binary_path);
 
     if (!patch_binary) {
-        print_red("Failed to parse patch binary: " + patch_binary_path);
+        verbose_print::print_red("Failed to parse patch binary: " + patch_binary_path);
         throw std::runtime_error("Merge failed");
     }
 
@@ -68,7 +68,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     close(original_stderr);
 
     if (!target_binary) {
-        print_red("Failed to parse target binary: " + target_binary_path);
+        verbose_print::print_red("Failed to parse target binary: " + target_binary_path);
         throw std::runtime_error("Merge failed");
     }
 
@@ -79,12 +79,12 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
         if (!target_binary->has_library(library)) {
             try {
                 target_binary->add_library(library);
-                print_green("Added " + library + " to target binary");
+                verbose_print::print_green("Added " + library + " to target binary");
             } catch (const std::exception& e) {
                 continue;
             }
         } else {
-            print_yellow("Library " + library + " is already included in target binary -> skipped");
+            verbose_print::print_yellow("Library " + library + " is already included in target binary -> skipped");
         }
     }
 
@@ -112,7 +112,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
 
         target_binary->add(new_got_section);
 
-        print_green("Added .got to target binary");
+        verbose_print::print_green("Added .got to target binary");
     }
 
     // Add .plt.sec section
@@ -130,7 +130,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
 
         target_binary->add(new_pltsec_section);
 
-        print_green("Added .plt.sec to target binary");
+        verbose_print::print_green("Added .plt.sec to target binary");
     }
     
     // Add .rodata section
@@ -148,7 +148,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
 
         target_binary->add(new_rodata_section);
 
-        print_green("Added .rodata to target binary");
+        verbose_print::print_green("Added .rodata to target binary");
     }
 
     // Add .data section
@@ -166,7 +166,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
 
         target_binary->add(new_data_section);
 
-        print_green("Added .data to target binary");
+        verbose_print::print_green("Added .data to target binary");
     }
 
     // Add .text section
@@ -192,7 +192,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
 
         target_binary->add(new_text_section);
 
-        print_green("Added .text to target binary");
+        verbose_print::print_green("Added .text to target binary");
     }
     
     target_binary->write(output_binary_path);

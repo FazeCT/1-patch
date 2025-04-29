@@ -160,7 +160,7 @@ void print_help() {
     std::cout << "\033[1;36mStatic Binary Rewriting With Code Insertion\033[0m" << std::endl;
     std::cout << "\033[1;36mPatch an ELF binary with user-input C program\033[0m" << std::endl;
 
-    std::cout << "\n\033[1;33mUsage: 1-patch <OPTIONS> [PATCH_CODE] [TARGET_BINARY] [OUTPUT_BINARY]\033[0m" << std::endl;
+    std::cout << "\n\033[1;33mUsage: 1-patch -p PATCH_CODE -i TARGET_BINARY [-o OUTPUT_BINARY] [OPTIONS]\033[0m" << std::endl;
 
     std::cout << "\n\033[1;36mPatch Syntax:\033[0m" << std::endl;
     std::cout << "\033[1;36m  Prefix:\033[0m" << std::endl;
@@ -176,17 +176,39 @@ void print_help() {
     std::cout << "    Any symbols that do not adhere to the defined syntax will be skipped" << std::endl;
 
     std::cout << "\n\033[1;36mOptions:\033[0m" << std::endl;
-    std::cout << "    \033[1;35m-h, --help\033[0m Show this help" << std::endl;
+    std::cout << "    \033[1;35m-h, --help\033[0m        Show this help message" << std::endl;
+    std::cout << "    \033[1;35m-v, --verbose\033[0m     Enable verbose output" << std::endl;
 
     std::cout << "\n\033[1;36mArguments:\033[0m" << std::endl;
-    std::cout << "    \033[1;35mPATCH_CODE\033[0m Path to the C program" << std::endl;
-    std::cout << "    \033[1;35mTARGET_BINARY\033[0m Path to the target binary" << std::endl;
-    std::cout << "    \033[1;35mOUTPUT_BINARY\033[0m Path to the output binary" << std::endl;
+    std::cout << "    \033[1;35m-p, --patch\033[0m       Path to the C patch source file" << std::endl;
+    std::cout << "    \033[1;35m-i, --input\033[0m       Path to the target input binary" << std::endl;
+    std::cout << "    \033[1;35m-o, --output\033[0m      Path to the output binary (optional)" << std::endl;
+
 }
-void print_red(std::string output) { std::cout << "\033[1;31m[!]\033[0m " + output << std::endl; }
-void print_green(std::string output) { std::cout << "\033[1;32m[+]\033[0m " + output << std::endl; } 
-void print_yellow(std::string output) { std::cout << "\033[1;33m[?]\033[0m " + output << std::endl; }
-void print_blue(std::string output) { std::cout << "\033[1;36m[-]\033[0m " + output << std::endl; }
+
+namespace verbose_print {
+    inline bool verbose = false; 
+
+    inline void print_red(const std::string& output) {
+        if (verbose) std::cout << "\033[1;31m[!]\033[0m " << output << std::endl;
+    }
+
+    inline void print_green(const std::string& output) {
+        if (verbose) std::cout << "\033[1;32m[+]\033[0m " << output << std::endl;
+    }
+
+    inline void print_yellow(const std::string& output) {
+        if (verbose) std::cout << "\033[1;33m[?]\033[0m " << output << std::endl;
+    }
+
+    inline void print_blue(const std::string& output) {
+        if (verbose) std::cout << "\033[1;36m[-]\033[0m " << output << std::endl;
+    }
+
+    inline void print_module(const std::string& output) {
+        if (verbose) std::cout << "\033[1;32m[" << output << "]\033[0m " << std::endl;
+    }
+}
 
 // Parse the target address of a patch in patch binary
 uint64_t parse_address(const std::string& hex) {
@@ -344,14 +366,14 @@ std::vector<uint8_t> assemble_instruction(const std::string& instruction) {
     if (ks_asm(ks, instruction.c_str(), 0, &encode, &size, &count_ks) != KS_ERR_OK) {
         ks_free(encode);
         ks_close(ks);
-        print_red("Failed to assemble instruction: " + instruction);
+        verbose_print::print_red("Failed to assemble instruction: " + instruction);
         throw std::runtime_error("Failed to assemble instruction");
     } else {
         std::vector<uint8_t> assembled_code(encode, encode + size);
         ks_free(encode);
         ks_close(ks);
         if (assembled_code.empty()) {
-            print_red("Failed to assemble instruction: " + instruction);
+            verbose_print::print_red("Failed to assemble instruction: " + instruction);
             throw std::runtime_error("Failed to assemble instruction");
         }
         return assembled_code;

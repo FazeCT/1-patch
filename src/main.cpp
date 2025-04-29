@@ -10,104 +10,102 @@
 #include "relocator.hpp"
 
 int main(int argc, char* argv[]) {
-    bool help = false;
     std::string patch_code_path;
     std::string target_binary_path;
     std::string output_binary_path;
+    bool help = false;
 
-    if (argc >= 2 && (argv[1] == std::string("-h") || argv[1] == std::string("--help"))) {
-        help = true;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+
+        if (arg == "-h" || arg == "--help") {
+            help = true;
+        } else if (arg == "-v" || arg == "--verbose") {
+            verbose_print::verbose = true;
+        } else if ((arg == "-p" || arg == "--patch") && i + 1 < argc) {
+            patch_code_path = argv[++i];
+        } else if ((arg == "-i" || arg == "--input") && i + 1 < argc) {
+            target_binary_path = argv[++i];
+        } else if ((arg == "-o" || arg == "--output") && i + 1 < argc) {
+            output_binary_path = argv[++i];
+        } else {
+            help = true;
+            break;
+        }
     }
 
-    if (argc >= 2 && argv[1] != nullptr) {
-        patch_code_path = argv[1];
-    }
-
-    if (argc >= 3 && argv[2] != nullptr) {
-        target_binary_path = argv[2];
-    }
-
-    if (argc >= 4 && argv[3] != nullptr) {
-        output_binary_path = argv[3];
-    }
-    
-    if (argc == 1 || help || patch_code_path.empty() || target_binary_path.empty()) {
+    if (help || patch_code_path.empty() || target_binary_path.empty()) {
         print_help();
         return 0;
-    }
-
-    std::cout << "\033[1;32m[Compile]\033[0m" << std::endl;
-
-    std::string patch_binary_path;
-
-    try {
-        patch_binary_path = compile(patch_code_path);
-        print_green("Compiled " + patch_code_path + " into " + patch_binary_path);
-
-    } catch (const std::runtime_error& e) {
-        print_red("1-patch: " + std::string(e.what()));
-        return 1;
-    }
-
-    print_green("Done.");
-
-    std::cout << "\n\033[1;32m[Parse]\033[0m" << std::endl;
-
-    print_blue("Parsing patch binary at" + patch_binary_path);
-
-    // Contains global variables and functions in patch binary
-    GlobalVarMap global_var_map;
-    FunctionMap function_map;
-
-    try {
-        parse_patch_binary(patch_binary_path, global_var_map, function_map);
-    } catch (const std::runtime_error& e) {
-        print_red("1-patch: " + std::string(e.what()));
-        return 1;
     }
 
     if (output_binary_path.empty()) {
         output_binary_path = target_binary_path + "_patched";
     }
 
-    print_blue("Parsing target binary at " + target_binary_path);
+    verbose_print::print_module("Compile");
 
-    ReferenceMap reference_map;
+    std::string patch_binary_path;
 
     try {
-        parse_target_binary(target_binary_path, reference_map);
+        
+        patch_binary_path = compile(patch_code_path);
+        verbose_print::print_green("Compiled " + patch_code_path + " into " + patch_binary_path);
+
     } catch (const std::runtime_error& e) {
-        print_red("1-patch: " + std::string(e.what()));
+        verbose_print::print_red("1-patch: " + std::string(e.what()));
         return 1;
     }
 
-    print_green("Done.");
+    verbose_print::print_module("Parse");
 
-    std::cout << "\n\033[1;32m[Merge]\033[0m" << std::endl;
+    // Contains global variables and functions in patch binary
+    GlobalVarMap global_var_map;
+    FunctionMap function_map;
+
+    try {
+        verbose_print::print_blue("Parsing patch binary at" + patch_binary_path);
+        parse_patch_binary(patch_binary_path, global_var_map, function_map);
+    } catch (const std::runtime_error& e) {
+        verbose_print::print_red("1-patch: " + std::string(e.what()));
+        return 1;
+    }
+
+    // Contains references in target binary
+    ReferenceMap reference_map;
+
+    try {
+        verbose_print::print_blue("Parsing target binary at " + target_binary_path);
+        parse_target_binary(target_binary_path, reference_map);
+        verbose_print::print_green("Done.");
+    } catch (const std::runtime_error& e) {
+        verbose_print::print_red("1-patch: " + std::string(e.what()));
+        return 1;
+    }
+
+    verbose_print::print_module("Merge");
 
     std::string new_section_indicator;
 
     try {
         new_section_indicator = merge_binary(patch_binary_path, target_binary_path, output_binary_path, global_var_map, function_map);
     } catch (const std::runtime_error& e) {
-        print_red("1-patch: " + std::string(e.what()));
+        verbose_print::print_red("1-patch: " + std::string(e.what()));
         return 1;
     }
 
-    print_green("Done.");
-
-    std::cout << "\n\033[1;32m[Relocate]\033[0m" << std::endl;
+    verbose_print::print_module("Relocate");
 
     try {
         relocate(patch_binary_path, target_binary_path, output_binary_path, global_var_map, function_map, reference_map, new_section_indicator);
     } catch (const std::runtime_error& e) {
-        print_red("1-patch: " + std::string(e.what()));
+        verbose_print::print_red("1-patch: " + std::string(e.what()));
         return 1;
     }
 
     std::filesystem::remove(patch_binary_path);
 
-    print_green("Done.");
+    verbose_print::print_green("Done.");
 
     return 0;
 }

@@ -18,7 +18,7 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarMap& glob
     std::unique_ptr<LIEF::ELF::Binary> patch_binary = LIEF::ELF::Parser::parse(patch_binary_path);
 
     if (!patch_binary) {
-        print_red("Failed to parse patch binary: " + patch_binary_path);
+        verbose_print::print_red("Failed to parse patch binary: " + patch_binary_path);
         throw std::runtime_error("Patch parser failed");
     }
     
@@ -46,12 +46,12 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarMap& glob
         if (operation != OperationType::Add) {
             target_address = parse_address(symbol_name.substr(4));
             if (target_address == UINT64_MAX) {
-                print_yellow("Target address for " + symbol_name + " cannot be resolved -> skipped");
+                verbose_print::print_yellow("Target address for " + symbol_name + " cannot be resolved -> skipped");
                 continue;
             }
         }
 
-        print_blue("Found symbol " + symbol_name);
+        verbose_print::print_blue("Found symbol " + symbol_name);
 
         if (symbol.is_variable()) {
             if (operation != OperationType::Ref){
@@ -137,7 +137,7 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarMap& glob
         }
 
         else {
-            print_red("Symbol " + symbol_name + " is not a global variable or a function");
+            verbose_print::print_red("Symbol " + symbol_name + " is not a global variable or a function");
         }
     }
 }

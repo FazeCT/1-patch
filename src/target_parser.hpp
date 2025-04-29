@@ -10,7 +10,7 @@
 void parse_target_binary(const std::string& target_binary_path, ReferenceMap& reference_map) {
     std::unique_ptr<LIEF::ELF::Binary> target_binary = LIEF::ELF::Parser::parse(target_binary_path);
     if (!target_binary) {
-        print_red("Failed to parse target binary: " + target_binary_path);
+        verbose_print::print_red("Failed to parse target binary: " + target_binary_path);
         throw std::runtime_error("Target parser failed");
     }
 

@@ -1,0 +1,42 @@
+#include <stdint.h>
+#include <stdio.h>
+
+uint64_t ref_0x4040_arr[32];
+const char ref_0x204D_merged[];
+const char ref_0x200E_invalid[];
+const char ref_0x2041_dst_prompt[];
+const char ref_0x2047_src_prompt[];
+
+int ref_0x1362_get_index() {}
+
+void fix_0x1547_merge() {
+    int dst = ref_0x1362_get_index(ref_0x2041_dst_prompt);
+    int src = ref_0x1362_get_index(ref_0x2047_src_prompt);
+    size_t v1, v2, v3;
+    char* dst_str;
+    char* src_str;
+    char* sa;
+
+    // If dst == src, skip the merge (avoid double free)
+    if (ref_0x4040_arr[dst] && ref_0x4040_arr[src] && dst != src) {
+        dst_str = ref_0x4040_arr[dst];
+        src_str = ref_0x4040_arr[src];
+
+        v1 = strlen(dst_str);
+        v2 = strlen(src_str);
+
+        sa = realloc(dst, v1 + v2 + 1);
+        v3 = strlen(src);
+
+        strncat(sa, src, v3);
+        printf(ref_0x204D_merged, sa);
+        free(src);
+
+        ref_0x4040_arr[dst] = sa;
+        ref_0x4040_arr[src] = NULL;
+    }
+
+    else {
+        puts(ref_0x200E_invalid);
+    }
+}

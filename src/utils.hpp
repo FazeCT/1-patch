@@ -301,15 +301,15 @@ void extract_references(const std::vector<uint8_t>& code, uint64_t start_address
 
                     switch (detail->x86.operands[0].type) {
                         case X86_OP_IMM:
-                            resolved_address = std::stoull(instruction.op_str, nullptr, 16);
+                            resolved_address = detail->x86.operands[0].imm;
+                            break;
                         case X86_OP_REG:
                             break;
                         case X86_OP_MEM:
                             if (detail->x86.operands[0].mem.base == X86_REG_RIP) {
                                 resolved_address = instruction.address + instruction.size + detail->x86.operands[0].mem.disp;
-                            } else {
-                                break;
-                            }
+                            } 
+                            break;
                         default:
                             break;
                     }

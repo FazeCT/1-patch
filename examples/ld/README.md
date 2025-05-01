@@ -1,0 +1,6 @@
+## GNU binutils 2.43 - ld
+
+**Exploit technique:** https://vuldb.com/?submit.489991
+
+**Bug(s):** 
+- **CVE-2025-1153:** A vulnerability classified as problematic was found in GNU Binutils 2.43/2.44. Affected by this vulnerability is the function bfd_set_format of the file format.c. The manipulation leads to memory corruption. The attack can be launched remotely. The complexity of an attack is rather high. The exploitation appears to be difficult. Upgrading to version 2.45 is able to address this issue. The identifier of the patch is 8d97c1a53f3dc9fd8e1ccdb039b8a33d50133150. It is recommended to upgrade the affected component.

@@ -24,7 +24,6 @@ void ref_0xB7CEB_display_target_tables(const struct display_target *arg) {};
 int fix_0xB7E74_display_info() {
     struct display_target arg;
 
-    ref_0x5FEC0_printf("Patched");
     ref_0x5FEC0_printf(ref_0x231950_bfd_version, ref_0x231930_gnu_binutils_version);
 
     ref_0xB7AB7_display_target_list(&arg);

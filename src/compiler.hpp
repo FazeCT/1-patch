@@ -47,7 +47,7 @@ void exec_compile(const std::string& input_path, const std::string& output_path)
         throw std::runtime_error("Compilation failed");
     }
 
-    std::string command = "gcc -w " + input_path + " -o " + output_path + " -g";
+    std::string command = "gcc -w -fno-stack-protector " + input_path + " -o " + output_path + " -g";
     std::string output = execute_command(command);
 
     if (output.find("undefined reference to `main'") != std::string::npos) {

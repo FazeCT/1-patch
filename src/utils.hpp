@@ -164,9 +164,9 @@ void print_help() {
 
     std::cout << "\n\033[1;36mPatch Syntax:\033[0m" << std::endl;
     std::cout << "\033[1;36m  Prefix:\033[0m" << std::endl;
-    std::cout << "    \033[1;32mvolatile\033[0m\033[1;35m add_\033[0m Add a symbol to the target binary" << std::endl;
-    std::cout << "    \033[1;32mvolatile\033[0m\033[1;35m fix_\033[0m Fix a symbol within the target binary" << std::endl;
-    std::cout << "    \033[1;32mvolatile\033[0m\033[1;35m ref_\033[0m Reference a symbol within the target binary" << std::endl;
+    std::cout << "    \033[1;32m(volatile)\033[0m\033[1;35m add_\033[0m Add a symbol to the target binary" << std::endl;
+    std::cout << "    \033[1;32m(volatile)\033[0m\033[1;35m fix_\033[0m Fix a symbol within the target binary" << std::endl;
+    std::cout << "    \033[1;35mref_\033[0m Reference a symbol within the target binary" << std::endl;
 
     std::cout << "\n\033[1;36m  Suffix:\033[0m" << std::endl;
     std::cout << "    Anything in case of\033[1;35m add_\033[0m" << std::endl;

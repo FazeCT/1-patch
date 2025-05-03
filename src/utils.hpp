@@ -274,6 +274,19 @@ std::string generate_random_string() {
     return fnv1a_hash(std::to_string(rand));
 }
 
+// Split a string by a delimiter
+std::vector<std::string> split(const std::string& str, char delimiter) {
+    std::vector<std::string> tokens;
+    std::stringstream ss(str);
+    std::string token;
+
+    while (std::getline(ss, token, delimiter)) {
+        tokens.push_back(token);
+    }
+
+    return tokens;
+}
+
 // Extract global variables/functions references from a code section
 void extract_references(const std::vector<uint8_t>& code, uint64_t start_address, ReferenceMap& reference_map) {
     csh handle;

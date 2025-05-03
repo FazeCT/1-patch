@@ -30,25 +30,30 @@ void patch_global_var_ref(
         if (detail) {
             uint64_t instruction_address = instruction.address - old_base + new_base;
             std::string new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
+            std::string instruction_opstr = std::string(instruction.op_str);
 
             if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
                 uint32_t new_disp = new_address - instruction_address - instruction.size;
-                uint32_t old_disp = detail->x86.operands[0].mem.disp;
                 
-                size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                if (disp_pos != std::string::npos) {
-                    new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
+                // new_ins = mnemonic new_operand1, operand2
+                new_instruction = std::string(instruction.mnemonic) + " [rip + " + decimal_to_hex(new_disp) + "]";
+                instruction_opstr = "[rip + " + decimal_to_hex(new_disp) + "]";
+
+                if (detail->x86.op_count > 1) {
+                    std::vector<std::string> operands_str = split(instruction.op_str, ',');
+                    new_instruction += ", " + operands_str[1];
+                    instruction_opstr += ", " + operands_str[1];
                 }
+
             }
 
-            if (detail->x86.operands[1].type == X86_OP_MEM && detail->x86.operands[1].mem.base == X86_REG_RIP) {
+            if (detail->x86.op_count > 1 && detail->x86.operands[1].type == X86_OP_MEM && detail->x86.operands[1].mem.base == X86_REG_RIP) {
                 uint32_t new_disp = new_address - instruction_address - instruction.size;
-                uint32_t old_disp = detail->x86.operands[1].mem.disp;
 
-                size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                if (disp_pos != std::string::npos) {
-                    new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
-                }
+                // new_ins = mnemonic operand1, new_operand2
+                std::vector<std::string> operands_str = split(instruction_opstr, ',');
+                new_instruction = std::string(instruction.mnemonic) + " " + operands_str[0] + ", [rip + " + decimal_to_hex(new_disp) + "]";
+                instruction_opstr = operands_str[0] + ", [rip + " + decimal_to_hex(new_disp) + "]";
             }
 
             try {
@@ -84,17 +89,16 @@ void patch_function_ref(
         if (detail) {
             uint64_t instruction_address = instruction.address - old_base + new_base;
             std::string new_instruction;
-
             if (detail->x86.operands[0].type == X86_OP_MEM && detail->x86.operands[0].mem.base == X86_REG_RIP) {
                 uint32_t new_disp = new_address - instruction_address - instruction.size;
-                uint32_t old_disp = detail->x86.operands[0].mem.disp;
 
-                new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
-        
-                size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                if (disp_pos != std::string::npos) {
-                    new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
+                new_instruction = std::string(instruction.mnemonic) + " [rip + " + decimal_to_hex(new_disp) + "]";
+
+                if (detail->x86.op_count > 1) {
+                    std::vector<std::string> operands_str = split(instruction.op_str, ',');
+                    new_instruction += ", " + operands_str[1];
                 }
+        
             }
 
             else if (detail->x86.operands[0].type == X86_OP_IMM) {
@@ -199,15 +203,9 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                         uint64_t old_address = instruction.address + instruction.size + detail->x86.operands[0].mem.disp;
                         uint64_t new_address = got_entries[old_address];
 
-                        uint32_t old_disp = detail->x86.operands[0].mem.disp;
                         uint32_t new_disp = new_address - instruction.size - patched_binary_address;
 
-                        new_instruction = std::string(instruction.mnemonic) + " " + instruction.op_str;
-                
-                        size_t disp_pos = new_instruction.find(decimal_to_hex(old_disp));
-                        if (disp_pos != std::string::npos) {
-                            new_instruction.replace(disp_pos, decimal_to_hex(old_disp).length(), decimal_to_hex(new_disp));
-                        }
+                        new_instruction = std::string(instruction.mnemonic) + " [rip + " + decimal_to_hex(new_disp) + "]";
                     }
 
                     else if (detail->x86.operands[0].type == X86_OP_IMM) {

@@ -22,7 +22,7 @@ void fix_0x2BECFA0_showWebStartupMessage() {
 
     puts("showWebStartupMessage was called with:");
     puts(msg_cut);
-    puts("------------------------");
+    puts("--------------------------------------");
 
     free(msg_cut);
 }

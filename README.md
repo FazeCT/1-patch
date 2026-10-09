@@ -30,7 +30,7 @@ cmake -S "$HOME/src/LIEF" -B "$HOME/src/LIEF/build" \
   -DLIEF_TESTS=OFF \
   -DCMAKE_INSTALL_PREFIX="$HOME/.local"
 
-cmake --build "$HOME/src/LIEF/build" --target install -j2
+cmake --build "$HOME/src/LIEF/build" --target install -j"$(nproc)"
 ```
 
 Capstone and Keystone are installed and built automatically during the project build.

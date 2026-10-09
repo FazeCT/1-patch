@@ -1,5 +1,6 @@
-example/original 
-example/patch
-example/temp
+example/
 build/
+build-linux/
 .vscode/
+242_ĐATN_417_2152184.pdf
+*_patched

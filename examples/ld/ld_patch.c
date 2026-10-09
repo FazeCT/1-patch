@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 
 FILE* ref_0x537520_stdout;
 FILE* ref_0x537580_stderr;
@@ -21,7 +22,8 @@ void fix_0x5CE94_einfo(const char *fmt, ...) {
 
     char *new_fmt = malloc(strlen(fmt) + 1);
     if (!new_fmt) {
-        return NULL;
+        va_end(args);
+        return;
     }
 
     char *q = new_fmt; 
@@ -29,6 +31,10 @@ void fix_0x5CE94_einfo(const char *fmt, ...) {
     while (*p) {
         if (*p == '%') {
             p++;
+            if (*p == '\0') {
+                *q++ = '%';
+                break;
+            }
             if (*p == 'F') {
                 is_fatal = true;
                 p++;

@@ -13,6 +13,9 @@
 #include <regex>
 #include <fcntl.h>
 #include <map>
+#include <optional>
+#include <atomic>
+#include <random>
 
 #include <capstone/capstone.h>
 #include <keystone/keystone.h>
@@ -154,36 +157,58 @@ class FunctionMap {
 // Print functions
 // Print help
 void print_help() {
-    std::cout << "\n\033[1;32m1-PATCH [v0.1.0]\033[0m" << std::endl;
-    std::cout << "\033[1;32m----------------\033[0m" << std::endl;
+    auto help_row = [](const std::string& label,
+                       const std::string& styled_label,
+                       const std::string& description) {
+        constexpr size_t label_width = 30;
+        const size_t spaces = label.size() < label_width
+            ? label_width - label.size() : 2;
+        std::cout << "    " << styled_label << std::string(spaces, ' ')
+                  << description << '\n';
+    };
 
-    std::cout << "\033[1;36mStatic Binary Rewriting With Code Insertion\033[0m" << std::endl;
-    std::cout << "\033[1;36mPatch an ELF binary with user-input C program\033[0m" << std::endl;
+    std::cout << "\n\033[1;32m1-PATCH [v1.0.0]\033[0m\n";
+    std::cout << "\033[1;32m----------------\033[0m\n";
+    std::cout << "\033[1;36mStatic Binary Rewriting With Code Insertion\033[0m\n";
+    std::cout << "\033[1;36mPatch an ELF binary with user-input C program\033[0m\n";
+    std::cout << "\n\033[1;33mUsage: 1-patch -p PATCH_CODE -i TARGET_BINARY [-o OUTPUT_BINARY] [OPTIONS]\033[0m\n";
 
-    std::cout << "\n\033[1;33mUsage: 1-patch -p PATCH_CODE -i TARGET_BINARY [-o OUTPUT_BINARY] [OPTIONS]\033[0m" << std::endl;
+    std::cout << "\n\033[1;36mPatch Syntax:\033[0m\n";
+    std::cout << "\033[1;36m  Prefix:\033[0m\n";
+    help_row("(volatile) add_",
+             "\033[1;32m(volatile)\033[0m \033[1;35madd_\033[0m",
+             "Add a symbol to the target binary");
+    help_row("(volatile) fix_",
+             "\033[1;32m(volatile)\033[0m \033[1;35mfix_\033[0m",
+             "Fix a symbol within the target binary");
+    help_row("ref_", "\033[1;35mref_\033[0m",
+             "Reference a symbol within the target binary");
 
-    std::cout << "\n\033[1;36mPatch Syntax:\033[0m" << std::endl;
-    std::cout << "\033[1;36m  Prefix:\033[0m" << std::endl;
-    std::cout << "    \033[1;32m(volatile)\033[0m\033[1;35m add_\033[0m Add a symbol to the target binary" << std::endl;
-    std::cout << "    \033[1;32m(volatile)\033[0m\033[1;35m fix_\033[0m Fix a symbol within the target binary" << std::endl;
-    std::cout << "    \033[1;35mref_\033[0m Reference a symbol within the target binary" << std::endl;
+    std::cout << "\n\033[1;36m  Suffix:\033[0m\n";
+    help_row("add_", "\033[1;35madd_\033[0m", "Any suffix");
+    help_row("fix_ / ref_",
+             "\033[1;35mfix_\033[0m / \033[1;35mref_\033[0m",
+             "Target symbol address followed by an optional name");
 
-    std::cout << "\n\033[1;36m  Suffix:\033[0m" << std::endl;
-    std::cout << "    Anything in case of\033[1;35m add_\033[0m" << std::endl;
-    std::cout << "    Address of the symbol within the target binary in case of\033[1;35m fix_\033[0m and\033[1;35m ref_\033[0m" << std::endl;
+    std::cout << "\n\033[1;36m  Note:\033[0m\n";
+    std::cout << "    Symbols outside the defined syntax are skipped\n";
 
-    std::cout << "\n\033[1;36m  Note:\033[0m" << std::endl;
-    std::cout << "    Any symbols that do not adhere to the defined syntax will be skipped" << std::endl;
+    std::cout << "\n\033[1;36mOptions:\033[0m\n";
+    help_row("-h, --help", "\033[1;35m-h, --help\033[0m",
+             "Show this help message");
+    help_row("-v, --verbose", "\033[1;35m-v, --verbose\033[0m",
+             "Enable verbose output");
+    help_row("--allow-unverified-targets",
+             "\033[1;35m--allow-unverified-targets\033[0m",
+             "Permit fix_ writes when target symbol sizes are unavailable");
 
-    std::cout << "\n\033[1;36mOptions:\033[0m" << std::endl;
-    std::cout << "    \033[1;35m-h, --help\033[0m        Show this help message" << std::endl;
-    std::cout << "    \033[1;35m-v, --verbose\033[0m     Enable verbose output" << std::endl;
-
-    std::cout << "\n\033[1;36mArguments:\033[0m" << std::endl;
-    std::cout << "    \033[1;35m-p, --patch\033[0m       Path to the C patch source file" << std::endl;
-    std::cout << "    \033[1;35m-i, --input\033[0m       Path to the target input binary" << std::endl;
-    std::cout << "    \033[1;35m-o, --output\033[0m      Path to the output binary (optional)" << std::endl;
-
+    std::cout << "\n\033[1;36mArguments:\033[0m\n";
+    help_row("-p, --patch", "\033[1;35m-p, --patch\033[0m",
+             "Path to the C patch source file");
+    help_row("-i, --input", "\033[1;35m-i, --input\033[0m",
+             "Path to the target input binary");
+    help_row("-o, --output", "\033[1;35m-o, --output\033[0m",
+             "Path to the output binary (optional)");
 }
 
 namespace verbose_print {
@@ -238,8 +263,8 @@ std::string decimal_to_hex(uint64_t decimal) {
 
 // Convert vector to little-endian integer
 uint64_t vector_to_int(const std::vector<uint8_t>& data) {
-    if (data.empty()) {
-        throw std::invalid_argument("Input vector is empty");
+    if (data.empty() || data.size() > sizeof(uint64_t)) {
+        throw std::invalid_argument("Input vector must contain 1 to 8 bytes");
     }
 
     uint64_t result = 0;
@@ -256,7 +281,7 @@ std::string fnv1a_hash(const std::string& input) {
     const uint64_t offset_basis = 0xcbf29ce484222325u;
 
     uint64_t hash = offset_basis;
-    for (char c : input) {
+    for (unsigned char c : input) {
         hash ^= static_cast<uint64_t>(c);
         hash *= fnv_prime;
     }
@@ -268,10 +293,12 @@ std::string fnv1a_hash(const std::string& input) {
 
 // Generate random string
 std::string generate_random_string() {
-    std::srand(static_cast<unsigned int>(std::time(nullptr)));
-    int rand = std::rand();
-
-    return fnv1a_hash(std::to_string(rand));
+    static std::atomic<uint64_t> counter{0};
+    std::random_device random;
+    return fnv1a_hash(std::to_string(random()) + ":" +
+                      std::to_string(random()) + ":" +
+                      std::to_string(getpid()) + ":" +
+                      std::to_string(counter.fetch_add(1)));
 }
 
 // Split a string by a delimiter
@@ -310,13 +337,14 @@ void extract_references(const std::vector<uint8_t>& code, uint64_t start_address
                 bool control_flow_instruction = cs_insn_group(handle, &instruction, CS_GRP_JUMP) || cs_insn_group(handle, &instruction, CS_GRP_CALL);
 
                 if (control_flow_instruction) {
-                    uint64_t resolved_address;
+                    if (detail->x86.op_count == 0) {
+                        continue;
+                    }
+                    std::optional<uint64_t> resolved_address;
 
                     switch (detail->x86.operands[0].type) {
                         case X86_OP_IMM:
                             resolved_address = detail->x86.operands[0].imm;
-                            break;
-                        case X86_OP_REG:
                             break;
                         case X86_OP_MEM:
                             if (detail->x86.operands[0].mem.base == X86_REG_RIP) {
@@ -327,7 +355,12 @@ void extract_references(const std::vector<uint8_t>& code, uint64_t start_address
                             break;
                     }
 
-                    if (resolved_address >= start_address && resolved_address < start_address + code.size()) {
+                    // Register and non-RIP memory branches have no static destination.
+                    if (!resolved_address) {
+                        continue;
+                    }
+                    if (*resolved_address >= start_address &&
+                        *resolved_address - start_address < code.size()) {
                         continue;
                     }
 
@@ -335,7 +368,7 @@ void extract_references(const std::vector<uint8_t>& code, uint64_t start_address
                         instruction.address,
                         instruction.size,
                         SymbolType::Function,
-                        resolved_address
+                        *resolved_address
                     ));
                 }
 
@@ -358,6 +391,7 @@ void extract_references(const std::vector<uint8_t>& code, uint64_t start_address
         }
         cs_free(insn, count);
     } else {
+        cs_close(&handle);
         throw std::runtime_error("Failed to disassemble code");
     }
 
@@ -374,7 +408,7 @@ std::vector<uint8_t> assemble_instruction(const std::string& instruction) {
 
     size_t size;
     size_t count_ks;
-    unsigned char *encode;
+    unsigned char *encode = nullptr;
 
     if (ks_asm(ks, instruction.c_str(), 0, &encode, &size, &count_ks) != KS_ERR_OK) {
         ks_free(encode);
@@ -400,18 +434,21 @@ public:
         if (fd < 0) throw std::runtime_error("Failed to open binary");
 
         if (dwarf_init(fd, DW_DLC_READ, nullptr, nullptr, &dbg, &err) != DW_DLV_OK) {
+            close(fd);
             throw std::runtime_error("Failed to init DWARF");
         }
     }
 
     ~DWARFResolver() {
-        dwarf_finish(dbg, &err);
-        close(fd);
+        if (dbg) dwarf_finish(dbg, &err);
+        if (fd >= 0) close(fd);
     }
 
     GlobalVariableType resolve(const std::string& var_name) {
-        // Reset DWARF state before resolving a new symbol
-        reset_state();
+        // The first lookup uses the constructor's session. Later lookups
+        // restart the CU iterator without reopening the file descriptor.
+        if (used) reset_state();
+        used = true;
 
         GlobalVariableType result;
 
@@ -433,14 +470,16 @@ public:
     }
 
 private:
-    int fd;
-    Dwarf_Debug dbg;
-    Dwarf_Error err;
+    int fd = -1;
+    Dwarf_Debug dbg = nullptr;
+    Dwarf_Error err = nullptr;
+    bool used = false;
 
     void reset_state() {
         // Reset any necessary internal states for a new resolve
         if (dbg) {
             dwarf_finish(dbg, &err); // Finish the previous session
+            dbg = nullptr;
         }
 
         // Reinitialize
@@ -450,27 +489,32 @@ private:
     }
 
     bool find_variable_recursive(Dwarf_Die die, const std::string& var_name, GlobalVariableType& out) {
-        char* name = nullptr;
-        if (dwarf_diename(die, &name, &err) == DW_DLV_OK && name) {
-            if (var_name == std::string(name)) {
-                Dwarf_Attribute attr;
-                if (dwarf_attr(die, DW_AT_type, &attr, &err) == DW_DLV_OK) {
-                    resolve_type(attr, out);
-                    return true;
+        // Walk siblings once per level; recursive calls only descend into children.
+        for (Dwarf_Die current = die; current != nullptr;) {
+            char* name = nullptr;
+            if (dwarf_diename(current, &name, &err) == DW_DLV_OK && name) {
+                if (var_name == std::string(name)) {
+                    Dwarf_Attribute attr;
+                    if (dwarf_attr(current, DW_AT_type, &attr, &err) == DW_DLV_OK) {
+                        resolve_type(attr, out);
+                        dwarf_dealloc(dbg, name, DW_DLA_STRING);
+                        return true;
+                    }
                 }
+                dwarf_dealloc(dbg, name, DW_DLA_STRING);
             }
-        }
 
-        // Recurse children
-        Dwarf_Die child;
-        if (dwarf_child(die, &child, &err) == DW_DLV_OK) {
-            if (find_variable_recursive(child, var_name, out)) return true;
-        }
+            Dwarf_Die child = nullptr;
+            if (dwarf_child(current, &child, &err) == DW_DLV_OK &&
+                find_variable_recursive(child, var_name, out)) {
+                return true;
+            }
 
-        // Recurse siblings
-        Dwarf_Die sibling = die;
-        while (dwarf_siblingof(dbg, sibling, &sibling, &err) == DW_DLV_OK) {
-            if (find_variable_recursive(sibling, var_name, out)) return true;
+            Dwarf_Die sibling = nullptr;
+            if (dwarf_siblingof(dbg, current, &sibling, &err) != DW_DLV_OK) {
+                break;
+            }
+            current = sibling;
         }
 
         return false;
@@ -497,6 +541,9 @@ private:
         // DW_AT_upper_bound
         if (dwarf_attr(subrange_die, DW_AT_upper_bound, &attr, &err) == DW_DLV_OK) {
             if (dwarf_formudata(attr, &uvalue, &err) == DW_DLV_OK) {
+                if (uvalue == UINT64_MAX) {
+                    throw std::runtime_error("DWARF array bound overflows");
+                }
                 count = uvalue + 1;
                 return true;
             }
@@ -542,6 +589,9 @@ private:
                         if (dwarf_tag(child, &child_tag, &err) == DW_DLV_OK && child_tag == DW_TAG_subrange_type) {
                             uint64_t count = 1;
                             if (extract_array_size(child, count)) {
+                                if (count != 0 && total_elements > UINT64_MAX / count) {
+                                    throw std::runtime_error("DWARF array element count overflows");
+                                }
                                 total_elements *= count;
                             } else {
                                 total_elements = 0;

@@ -16,16 +16,17 @@ int fix_0x4011F6_main() {
 
     ref_0x4010C0_printf("You don't have what it takes. Only a true wizard could change my suspicions. What do you have to say?\n");
     ref_0x4010E0_fflush(ref_0x404068_stdout);
-    ref_0x401100_scanf("%1024s", buf);
+    if (ref_0x401100_scanf("%1023s", buf) != 1) return 1;
     ref_0x4010C0_printf("Here's your input: ");
     ref_0x4010B0_puts(buf);
     ref_0x4010E0_fflush(ref_0x404068_stdout);
 
     if (ref_0x404060_sus == 0x67616c66) {
-        ref_0x4010C0_printf("I have NO clue how you did that, you must be a wizard. Here you go...\n");
+        ref_0x4010B0_puts("I have NO clue how you did that, you must be a wizard. Here you go...\n");
 
         FILE *fd = ref_0x4010F0_fopen("flag.txt", "r");
-        ref_0x4010D0_fgets(flag, 64, fd);
+        if (!fd) return 1;
+        if (!ref_0x4010D0_fgets(flag, sizeof(flag), fd)) return 1;
 
         ref_0x4010C0_printf("%s", flag);
         ref_0x4010E0_fflush(ref_0x404068_stdout);

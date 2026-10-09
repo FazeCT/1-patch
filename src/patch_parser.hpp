@@ -22,6 +22,7 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarMap& glob
         throw std::runtime_error("Patch parser failed");
     }
     
+    std::unique_ptr<DWARFResolver> resolver;
     for (const auto& symbol : patch_binary->symbols()) {
         std::string symbol_name = symbol.demangled_name();
 
@@ -55,34 +56,41 @@ void parse_patch_binary(const std::string& patch_binary_path, GlobalVarMap& glob
 
         if (symbol.is_variable()) {
             if (operation != OperationType::Ref){
-                DWARFResolver resolver(patch_binary_path);
-
-                GlobalVariableType variable_type = resolver.resolve(symbol_name);
-                uint64_t variable_size = variable_type.element_count > 0? symbol.size() / variable_type.element_count : symbol.size();
+                if (!resolver) resolver = std::make_unique<DWARFResolver>(patch_binary_path);
+                GlobalVariableType variable_type = resolver->resolve(symbol_name);
+                if (variable_type.element_count == 0 ||
+                    symbol.size() == 0 ||
+                    variable_type.element_count > symbol.size() ||
+                    symbol.size() % variable_type.element_count != 0) {
+                    throw std::runtime_error("Invalid patch variable array extent");
+                }
+                uint64_t variable_size = symbol.size() / variable_type.element_count;
+                GlobalVariableType element_type = variable_type;
+                element_type.is_array = false;
+                element_type.element_count = 1;
         
                 global_var_map.insert(std::make_unique<GlobalVar>(
                     operation,
                     variable_size,
                     patch_address,
                     target_address,
-                    variable_type,
+                    element_type,
                     UINT64_MAX
                 ));
 
                 // Also insert all elements of the array
-                for (int i = 1; i < variable_type.element_count; ++i) {
-                    GlobalVariableType element_type;
-
-                    element_type.primitive = variable_type.primitive;
-                    element_type.pointer_depth = variable_type.pointer_depth;
-                    element_type.is_array = false;
-                    element_type.element_count = 1;
-
+                for (uint64_t i = 1; i < variable_type.element_count; ++i) {
+                    if (i > (UINT64_MAX - patch_address) / variable_size ||
+                        (operation != OperationType::Add &&
+                         i > (UINT64_MAX - target_address) / variable_size)) {
+                        throw std::runtime_error("Patch variable array address overflows");
+                    }
                     global_var_map.insert(std::make_unique<GlobalVar>(
                         operation,
                         variable_size,
                         patch_address + i * variable_size, 
-                        target_address + i * variable_size, 
+                        operation == OperationType::Add ? UINT64_MAX :
+                            target_address + i * variable_size,
                         element_type,
                         UINT64_MAX
                     ));

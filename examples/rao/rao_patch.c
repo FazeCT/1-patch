@@ -7,7 +7,7 @@ int fix_0x4006E8_main() {
 
   ref_0x400667_init();
   ref_0x400540_printf("Input: ");
-  ref_0x400570_scanf("%40s", v4);
+  if (ref_0x400570_scanf("%39s", v4) != 1) return 1;
 
   return 0;
 }

@@ -1,0 +1,7 @@
+# Keep Unix scripts executable and compatible with /bin/sh in Linux checkouts.
+*.sh text eol=lf
+*.py text eol=lf
+*.c text eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
+CMakeLists.txt text eol=lf

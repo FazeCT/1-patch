@@ -144,45 +144,73 @@ EOF
         *) objdump -d --disassemble=target "indirect-$kind-patched" |
             grep -A1 '<target>:' | grep -q 'endbr64' ;;
     esac
+    objdump -d --disassemble=target "indirect-$kind-patched" | grep -q 'jmp'
     inserted_section=$(readelf -SW "indirect-$kind-patched" |
         awk '$2 ~ /^\.text\./ { print $2; exit }')
     test -n "$inserted_section"
     objdump -d -j "$inserted_section" "indirect-$kind-patched" |
         awk '/^[[:space:]]*[[:xdigit:]]+:/ { found = ($0 ~ /endbr64/); exit }
              END { exit !found }'
+    python3 - "indirect-$kind-patched" <<'PY'
+import re
+import subprocess
+import sys
+
+binary = sys.argv[1]
+sections = subprocess.check_output(["readelf", "-SW", binary], text=True)
+inserted = re.search(
+    r"\[\s*\d+\]\s+\.text\.[^\s]+\s+\S+\s+([0-9a-fA-F]+)\s+"
+    r"[0-9a-fA-F]+\s+([0-9a-fA-F]+)", sections)
+assert inserted, "missing inserted text section"
+start, size = (int(value, 16) for value in inserted.groups())
+main = subprocess.check_output(
+    ["objdump", "-d", "--disassemble=main", binary], text=True)
+direct_calls = [int(value, 16) for value in
+                re.findall(r"\bcallq?\s+([0-9a-fA-F]+)\b", main)]
+assert any(start <= address < start + size for address in direct_calls), (
+    "main's direct call still goes through the old function entry")
+PY
 done
 
-# Neither a one-byte function nor ENDBR64 plus RET can hold the jump.
+# Short functions cannot hold the entry jump, but their direct callers can
+# still be redirected to the replacement.
 cat > tiny.S <<'EOF'
 .text
 .globl tiny
 .type tiny, @function
 tiny:
+    xor %eax, %eax
     ret
 .size tiny, .-tiny
 .globl tiny_cet
 .type tiny_cet, @function
 tiny_cet:
     .byte 0xf3, 0x0f, 0x1e, 0xfa
+    xor %eax, %eax
     ret
 .size tiny_cet, .-tiny_cet
 .section .note.GNU-stack,"",@progbits
 EOF
 cat > tiny-main.c <<'EOF'
-extern void tiny(void);
-int main(void) { return 0; }
+extern int tiny(void);
+extern int tiny_cet(void);
+int main(void) { return tiny() + tiny_cet(); }
 EOF
 gcc -no-pie -O0 -g tiny.S tiny-main.c -o tiny-target
 for symbol in tiny tiny_cet; do
     tiny_address=$(nm -n tiny-target | awk -v name="$symbol" '$3 == name { print $1; exit }')
     test -n "$tiny_address"
     cat > "$symbol-patch.c" <<EOF
-void fix_0x${tiny_address}_${symbol}(void) { }
+int fix_0x${tiny_address}_${symbol}(void) { return 7; }
 EOF
     "$patcher" -p "$symbol-patch.c" -i tiny-target -o "$symbol-patched" 2> "$symbol.log"
     grep -q 'insufficient space for an entry jump' "$symbol.log"
     objdump -d --disassemble="$symbol" "$symbol-patched" | grep -q 'ret'
+    set +e
     "./$symbol-patched"
+    result=$?
+    set -e
+    test "$result" -eq 7
 done
 
 # Redirecting a function that ref_ also calls needs an original-code trampoline.

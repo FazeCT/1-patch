@@ -1,4 +1,6 @@
+#include <stdio.h>
 #include <stddef.h>
+#include <stdlib.h>
 
 enum { BFD_ARCH_LAST = 0x57, BFD_ARCH_OBSCURE = 0x1 };
 
@@ -13,24 +15,22 @@ struct display_target {
   } *info;
 };
 
-const char ref_0x231930_gnu_binutils_version[];
-const char ref_0x231950_bfd_version[];
+const char ref_0x230A90_gnu_binutils_version[];
+const char ref_0x230AA4_bfd_version[];
 
-int ref_0x5FEC0_printf(const char *format, ...) {};
-void ref_0x60400_free(void *ptr) {};
-void ref_0xB7AB7_display_target_list(struct display_target *arg) {};
-void ref_0xB7CEB_display_target_tables(const struct display_target *arg) {};
+void ref_0xB4724_display_target_list(struct display_target *arg) {};
+void ref_0xB4971_display_target_tables(const struct display_target *arg) {};
 
-int fix_0xB7E74_display_info() {
+int fix_0xB4B0E_display_info() {
     struct display_target arg;
 
-    ref_0x5FEC0_printf(ref_0x231950_bfd_version, ref_0x231930_gnu_binutils_version);
+    printf(ref_0x230AA4_bfd_version, ref_0x230A90_gnu_binutils_version);
 
-    ref_0xB7AB7_display_target_list(&arg);
+    ref_0xB4724_display_target_list(&arg);
     if (!arg.error)
-        ref_0xB7CEB_display_target_tables(&arg);
+        ref_0xB4971_display_target_tables(&arg);
     
-    // Add free to avoid memory leak
+    // Patch: Add a free to avoid memory leak
     free(arg.info);
     return arg.error;
 }

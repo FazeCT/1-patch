@@ -137,6 +137,18 @@ void write_relative_displacement(std::vector<uint8_t>& bytes, size_t offset,
     }
 }
 
+bool relative_displacement_fits(uint64_t target, uint64_t next_instruction,
+                                size_t encoded_size) {
+    if (encoded_size != 1 && encoded_size != 2 && encoded_size != 4) {
+        return false;
+    }
+    const uint64_t positive_limit = (uint64_t{1} << (encoded_size * 8 - 1)) - 1;
+    const uint64_t negative_limit = positive_limit + 1;
+    return target >= next_instruction
+        ? target - next_instruction <= positive_limit
+        : next_instruction - target <= negative_limit;
+}
+
 uint64_t relocated_instruction_address(uint64_t address, uint64_t old_base,
                                        uint64_t new_base, uint64_t size) {
     if (address < old_base || address - old_base > UINT64_MAX - new_base ||
@@ -203,14 +215,19 @@ void patch_reference(csh handle, LIEF::ELF::Binary& output_binary,
     cs_free(insn, count);
 }
 
-// Adding the patch sections can move allocatable sections in an ET_DYN
-// binary. Repair references that already existed in the target so they keep
-// pointing at the same target section after the merge. This is especially
-// important for PIE code, whose globals are commonly addressed with
-// RIP-relative loads.
+// Adding patch sections can move allocatable sections in an ET_DYN binary.
+// Repair existing references after the merge and redirect direct branches to
+// fixed functions. PIE globals commonly need RIP-relative load adjustments.
 void relocate_existing_target_references(
     csh handle, const LIEF::ELF::Binary& original,
-    LIEF::ELF::Binary& output) {
+    LIEF::ELF::Binary& output, const FunctionMap& function_map) {
+    std::map<uint64_t, uint64_t> replacements;
+    for (const Function* function : function_map.get_functions()) {
+        if (function->operation == OperationType::Fix) {
+            replacements[function->target_address] = function->new_address;
+        }
+    }
+
     for (const LIEF::ELF::Section& source_section : original.sections()) {
         if (!source_section.has(LIEF::ELF::Section::FLAGS::EXECINSTR) ||
             source_section.size() == 0) {
@@ -276,6 +293,18 @@ void relocate_existing_target_references(
                 const uint64_t output_address = relocated_instruction_address(
                     instruction.address, source_section.virtual_address(),
                     output_section->virtual_address(), instruction.size);
+                // Calls and tail jumps with an immediate target can go straight
+                // to fix_. Keep the old entry jump for indirect callers and
+                // for branches whose encoding cannot reach the replacement.
+                if (direct_reference) {
+                    auto replacement = replacements.find(referenced_address);
+                    if (replacement != replacements.end() &&
+                        relative_displacement_fits(replacement->second,
+                                                   output_address + instruction.size,
+                                                   x86.encoding.imm_size)) {
+                        relocated_reference = replacement->second;
+                    }
+                }
                 // A section that moves together with its reference keeps the
                 // same encoded displacement. Leave those bytes untouched.
                 if (relocated_reference - (output_address + instruction.size) ==
@@ -443,8 +472,6 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
         throw std::runtime_error("Failed to parse intermediate output binary");
     }
 
-    relocate_existing_target_references(handle, *target_binary, *output_binary);
-
     auto translate_target = [&target_binary, &output_binary](uint64_t address) -> uint64_t {
         return translate_target_address(*target_binary, *output_binary, address);
     };
@@ -459,6 +486,9 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
             function->new_address = translate_target(function->target_address);
         }
     }
+
+    relocate_existing_target_references(handle, *target_binary, *output_binary,
+                                        function_map);
 
     // Find new address of global variables
     for (auto& global_var : global_var_map.get_global_vars()) {

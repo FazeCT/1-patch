@@ -61,7 +61,7 @@ and pass its containing directory as `-DLIEF_DIR=<dir_here>`.
 
 ## Documentation
 
-Refer to [the documentation here](https://blog.fazect.com/projects/1-patch).
+Refer to [the documentation here](https://blog.fazect.com/projects/1-patch/#documentation).
 
 ## Extra Information
 

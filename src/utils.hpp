@@ -167,7 +167,7 @@ void print_help() {
                   << description << '\n';
     };
 
-    std::cout << "\n\033[1;32m1-PATCH [v1.0.0]\033[0m\n";
+    std::cout << "\n\033[1;32m1-PATCH [v1.0.1]\033[0m\n";
     std::cout << "\033[1;32m----------------\033[0m\n";
     std::cout << "\033[1;36mStatic Binary Rewriting With Code Insertion\033[0m\n";
     std::cout << "\033[1;36mPatch an ELF binary with user-input C program\033[0m\n";

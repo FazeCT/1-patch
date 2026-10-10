@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(1-patch VERSION 1.0.0 LANGUAGES C CXX)
+project(1-patch VERSION 1.0.1 LANGUAGES C CXX)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(FATAL_ERROR "1-patch rewrites Linux ELF binaries and must be built on Linux")

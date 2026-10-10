@@ -8,6 +8,7 @@
 #include <keystone/keystone.h>
 
 #include "utils.hpp"
+#include "got_reuse.hpp"
 
 #ifndef RELOCATOR_HPP
 #define RELOCATOR_HPP
@@ -530,10 +531,15 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
         throw std::runtime_error("Failed to enable Capstone instruction detail");
     }
 
-    // Map content of .got section if exists
-    if (output_binary->has_section(".got." + new_section_indicator)) {
-        LIEF::ELF::Section* new_got_section = require_section(*output_binary, ".got." + new_section_indicator);
-        uint64_t new_got_section_address = new_got_section->virtual_address();
+    // Point copied PLT stubs at compatible target GOT slots where possible.
+    // Allocate slots and dynamic relocations only for remaining patch imports.
+    const auto reused_got = reusable_got_entries(*patch_binary, *target_binary);
+    const bool needs_got_mapping =
+        output_binary->has_section(".plt.sec." + new_section_indicator) ||
+        output_binary->has_section(".got." + new_section_indicator);
+    if (needs_got_mapping) {
+        LIEF::ELF::Section* new_got_section =
+            output_binary->get_section(".got." + new_section_indicator);
 
         size_t index = 0;
         for (const LIEF::ELF::Relocation& rel : patch_binary->pltgot_relocations()) {
@@ -542,13 +548,30 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                 throw std::runtime_error("GOT relocation has no symbol");
             }
 
+            auto reused = reused_got.find(rel.address());
+            if (reused != reused_got.end()) {
+                const uint64_t entry_address = translate_target_address(
+                    *target_binary, *output_binary, reused->second);
+                if (!is_existing_got_slot(*output_binary, entry_address)) {
+                    throw std::runtime_error("Reused GOT slot was not preserved");
+                }
+                got_entries[rel.address()] = entry_address;
+                verbose_print::print_green("Reused GOT entry for " +
+                                           original_symbol->name());
+                continue;
+            }
+
+            if (!new_got_section) {
+                throw std::runtime_error("Missing GOT section for new imports");
+            }
             LIEF::ELF::Symbol new_symbol = *original_symbol;
             LIEF::ELF::Symbol* added_symbol = &output_binary->add_dynamic_symbol(new_symbol);
 
             if (index >= new_got_section->size() / sizeof(uint64_t)) {
                 throw std::runtime_error("Relocated GOT exceeds allocated section");
             }
-            uint64_t entry_address = new_got_section_address + (index++ * 8);
+            uint64_t entry_address = new_got_section->virtual_address() +
+                                     (index++ * sizeof(uint64_t));
 
             LIEF::ELF::Relocation new_relocation(entry_address, rel.type(), rel.encoding());
 

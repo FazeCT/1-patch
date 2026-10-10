@@ -4,6 +4,8 @@
 
 #include <LIEF/LIEF.hpp>
 
+#include "got_reuse.hpp"
+
 #ifndef MERGER_HPP
 #define MERGER_HPP
 
@@ -115,29 +117,30 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     // Add .got section
     if (patch_binary->has_section(".got") &&
         (needs_plt || !global_var_map.get_global_vars().empty())) {
-        std::vector<const LIEF::ELF::Relocation*> patch_relocations;
+        const auto reused = reusable_got_entries(*patch_binary, *target_binary);
+        size_t new_slot_count = 0;
 
         for (const LIEF::ELF::Relocation& rel : patch_binary->pltgot_relocations()) {
             const LIEF::ELF::Symbol* symbol = rel.symbol();
-            if (symbol == nullptr) continue;
-
-            patch_relocations.push_back(&rel);
+            if (symbol && reused.count(rel.address()) == 0) ++new_slot_count;
         }
 
-        size_t got_size = patch_relocations.size() * 8;
-        LIEF::ELF::Section* got_section = patch_binary->get_section(".got");
+        if (new_slot_count != 0) {
+            size_t got_size = new_slot_count * sizeof(uint64_t);
+            LIEF::ELF::Section* got_section = patch_binary->get_section(".got");
 
-        std::string new_got_section_name = ".got." + random_string;
-        LIEF::ELF::Section new_got_section(new_got_section_name);
+            std::string new_got_section_name = ".got." + random_string;
+            LIEF::ELF::Section new_got_section(new_got_section_name);
 
-        new_got_section.content(std::vector<uint8_t>(got_size, 0x00));
-        new_got_section.type(got_section->type());
-        new_got_section.alignment(got_section->alignment());
-        new_got_section.flags(got_section->flags());
+            new_got_section.content(std::vector<uint8_t>(got_size, 0x00));
+            new_got_section.type(got_section->type());
+            new_got_section.alignment(got_section->alignment());
+            new_got_section.flags(got_section->flags());
 
-        target_binary->add(new_got_section);
+            target_binary->add(new_got_section);
 
-        verbose_print::print_green("Added .got to target binary");
+            verbose_print::print_green("Added .got to target binary");
+        }
     }
 
     // Add .plt.sec section

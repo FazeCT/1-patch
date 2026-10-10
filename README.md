@@ -67,4 +67,6 @@ Refer to [the documentation here](https://blog.fazect.com/projects/1-patch/#docu
 
 This work was developed as my Computer Science Bachelor's thesis at Ho Chi Minh City University of Technology in late 2024.
 
-This work builds on ideas from [CRISPR](https://www.politesi.polimi.it/handle/10589/177822) by Filippo Cremonese @ Politecnico di Milano and [Redback](https://groundx.io/redback/) by Quynh Nguyen Anh @ Blackhat Asia 2020.
+This work builds on ideas from [CRISPR](https://www.politesi.polimi.it/handle/10589/177822) by Filippo Cremonese @ Politecnico di Milano and [Redback](https://groundx.io/redback/) by Quynh Nguyen @ Blackhat Asia 2020.
+
+Credit to [Khoa Nguyen](https://github.com/nganhkhoa) for being the co-author and supervisor for this work.

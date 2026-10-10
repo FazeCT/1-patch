@@ -14,8 +14,8 @@ readelf -h "$test_dir/objdump_patched" >/dev/null
 "$test_dir/objdump_patched" -i >/dev/null
 
 # The original main has a direct call to display_info at 0x6CADB. After
-# relocation, that call should name the inserted replacement rather than the
-# old display_info entry (which retains a jump for indirect callers).
+# relocation, that call should reach the replacement. The replacement may
+# occupy the old function body or a newly inserted text section.
 python3 - "$target" "$test_dir/objdump_patched" <<'PY'
 import re
 import subprocess
@@ -33,7 +33,6 @@ def section(path, name):
 
 source_text, _ = section(original, r"\.text")
 output_text, _ = section(patched, r"\.text")
-replacement_text, replacement_size = section(patched, r"\.text\.[^\s]+")
 callsite = 0x6CADB - source_text + output_text
 disassembly = subprocess.check_output(
     ["objdump", "-d", f"--start-address={callsite}",
@@ -41,6 +40,14 @@ disassembly = subprocess.check_output(
 call = re.search(r"\bcallq?\s+([0-9a-fA-F]+)\b", disassembly)
 assert call, "relocated display_info call was not found"
 destination = int(call.group(1), 16)
-assert replacement_text <= destination < replacement_text + replacement_size, (
-    f"direct display_info call still targets 0x{destination:x}")
+headers = subprocess.check_output(["readelf", "-SW", patched], text=True)
+inserted = re.search(r"\[\s*\d+\]\s+(\.text\.[^\s]+)", headers)
+if inserted:
+    replacement_text, replacement_size = section(
+        patched, re.escape(inserted.group(1)))
+    assert replacement_text <= destination < replacement_text + replacement_size, (
+        f"direct display_info call still targets 0x{destination:x}")
+else:
+    assert destination == 0xB4B0E - source_text + output_text, (
+        f"in-place display_info call targets 0x{destination:x}")
 PY

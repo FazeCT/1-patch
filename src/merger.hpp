@@ -47,7 +47,8 @@ std::vector<std::string> get_shared_libraries(const std::string& binary_path) {
 }
 
 std::string merge_binary(const std::string& patch_binary_path, const std::string& target_binary_path, const std::string& output_binary_path,
-                    GlobalVarMap& global_var_map, FunctionMap& function_map) {
+                    GlobalVarMap& global_var_map, FunctionMap& function_map,
+                    bool enable_in_place = true) {
 
     std::string random_string = generate_random_string();
 
@@ -72,6 +73,29 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
         throw std::runtime_error("Merge failed");
     }
 
+    plan_function_placement(*target_binary, function_map, enable_in_place);
+
+    bool needs_plt = false;
+    bool needs_rodata = false;
+    bool needs_text = false;
+    for (const Function* function : function_map.get_functions()) {
+        if (function->operation == OperationType::Ref) continue;
+        needs_text |= !function->in_place;
+        for (const Reference* reference : function->reference_table->get_references()) {
+            const LIEF::ELF::Section* source = patch_binary->section_from_virtual_address(
+                reference->reference_address);
+            if (!source) continue;
+            needs_plt |= source->name() == ".plt.sec";
+            needs_rodata |= source->name() == ".rodata";
+        }
+    }
+    // Pointer initializers in patch data can also depend on the copied PLT
+    // and read-only data even when no patch function refers to them directly.
+    if (!global_var_map.get_global_vars().empty()) {
+        needs_plt |= patch_binary->has_section(".plt.sec");
+        needs_rodata |= patch_binary->has_section(".rodata");
+    }
+
     // Add libraries to the target binary
     std::vector<std::string> patch_libraries = get_shared_libraries(patch_binary_path);
 
@@ -89,7 +113,8 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     }
 
     // Add .got section
-    if (patch_binary->has_section(".got")) {
+    if (patch_binary->has_section(".got") &&
+        (needs_plt || !global_var_map.get_global_vars().empty())) {
         std::vector<const LIEF::ELF::Relocation*> patch_relocations;
 
         for (const LIEF::ELF::Relocation& rel : patch_binary->pltgot_relocations()) {
@@ -116,7 +141,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     }
 
     // Add .plt.sec section
-    if (patch_binary->has_section(".plt.sec")) {
+    if (patch_binary->has_section(".plt.sec") && needs_plt) {
         LIEF::ELF::Section* pltsec_section = patch_binary->get_section(".plt.sec");
         auto pltsec_section_content = pltsec_section->content();
 
@@ -134,7 +159,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     }
     
     // Add .rodata section
-    if (patch_binary->has_section(".rodata")) {
+    if (patch_binary->has_section(".rodata") && needs_rodata) {
         LIEF::ELF::Section* rodata_section = patch_binary->get_section(".rodata");
         auto rodata_section_content = rodata_section->content();
 
@@ -170,7 +195,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     }
 
     // Add .text section
-    if (patch_binary->has_section(".text") && !function_map.get_functions().empty()) {
+    if (patch_binary->has_section(".text") && needs_text) {
         LIEF::ELF::Section* text_section = target_binary->get_section(".text");
 
         std::string new_text_section_name = ".text." + random_string;
@@ -183,6 +208,8 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
         std::vector<uint8_t> new_text_section_content;
 
         for (auto& function : function_map.get_functions()) {
+            if (function->operation == OperationType::Ref || function->in_place)
+                continue;
             auto function_code = patch_binary->get_content_from_virtual_address(function->patch_address, function->size);
             function->new_address = new_text_section_content.size();
             new_text_section_content.insert(new_text_section_content.end(), function_code.begin(), function_code.end());

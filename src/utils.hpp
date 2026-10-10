@@ -123,6 +123,8 @@ struct Function {
     uint64_t target_address;
     std::unique_ptr<ReferenceMap> reference_table;
     uint64_t new_address;
+    bool in_place = false;
+    uint64_t target_size = 0;
 
     Function(OperationType operation, uint64_t size, uint64_t patch_address, uint64_t target_address, std::unique_ptr<ReferenceMap> reference_table, uint64_t new_address)
         : operation(operation), size(size), patch_address(patch_address), target_address(target_address), reference_table(std::move(reference_table)), new_address(new_address) {}
@@ -167,7 +169,7 @@ void print_help() {
                   << description << '\n';
     };
 
-    std::cout << "\n\033[1;32m1-PATCH [v1.0.1]\033[0m\n";
+    std::cout << "\n\033[1;32m1-PATCH [v1.1.0]\033[0m\n";
     std::cout << "\033[1;32m----------------\033[0m\n";
     std::cout << "\033[1;36mStatic Binary Rewriting With Code Insertion\033[0m\n";
     std::cout << "\033[1;36mPatch an ELF binary with user-input C program\033[0m\n";

@@ -112,7 +112,10 @@ test ! -e unresolved-output
 # Calls through a saved function pointer must reach fix_, including with IBT
 # landing pads in both the original and newly compiled functions.
 cat > indirect-target.c <<'EOF'
-__attribute__((noinline)) int target(void) { return 3; }
+__attribute__((noinline)) int target(void) {
+    __asm__ volatile(".rept 48; nop; .endr");
+    return 3;
+}
 int main(void) {
     int (*volatile saved_target)(void) = target;
     return target() + saved_target();
@@ -139,37 +142,14 @@ EOF
     set -e
     test "$result" -eq 14
     case "$kind" in
-        plain) objdump -d --disassemble=target "indirect-$kind-patched" |
-            grep -A1 '<target>:' | grep -q 'jmp' ;;
+        plain) ! objdump -d --disassemble=target "indirect-$kind-patched" |
+            grep -A1 '<target>:' | grep -q 'endbr64' ;;
         *) objdump -d --disassemble=target "indirect-$kind-patched" |
             grep -A1 '<target>:' | grep -q 'endbr64' ;;
     esac
-    objdump -d --disassemble=target "indirect-$kind-patched" | grep -q 'jmp'
-    inserted_section=$(readelf -SW "indirect-$kind-patched" |
-        awk '$2 ~ /^\.text\./ { print $2; exit }')
-    test -n "$inserted_section"
-    objdump -d -j "$inserted_section" "indirect-$kind-patched" |
-        awk '/^[[:space:]]*[[:xdigit:]]+:/ { found = ($0 ~ /endbr64/); exit }
-             END { exit !found }'
-    python3 - "indirect-$kind-patched" <<'PY'
-import re
-import subprocess
-import sys
-
-binary = sys.argv[1]
-sections = subprocess.check_output(["readelf", "-SW", binary], text=True)
-inserted = re.search(
-    r"\[\s*\d+\]\s+\.text\.[^\s]+\s+\S+\s+([0-9a-fA-F]+)\s+"
-    r"[0-9a-fA-F]+\s+([0-9a-fA-F]+)", sections)
-assert inserted, "missing inserted text section"
-start, size = (int(value, 16) for value in inserted.groups())
-main = subprocess.check_output(
-    ["objdump", "-d", "--disassemble=main", binary], text=True)
-direct_calls = [int(value, 16) for value in
-                re.findall(r"\bcallq?\s+([0-9a-fA-F]+)\b", main)]
-assert any(start <= address < start + size for address in direct_calls), (
-    "main's direct call still goes through the old function entry")
-PY
+    ! readelf -SW "indirect-$kind-patched" | grep -q '\.text\.'
+    objdump -d --disassemble=main "indirect-$kind-patched" |
+        grep -q '<target>'
 done
 
 # Short functions cannot hold the entry jump, but their direct callers can

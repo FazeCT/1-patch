@@ -2,6 +2,7 @@
 #include <map>
 #include <memory> 
 #include <algorithm>
+#include <set>
 
 #include <capstone/capstone.h>
 #include <keystone/keystone.h>
@@ -10,6 +11,16 @@
 
 #ifndef RELOCATOR_HPP
 #define RELOCATOR_HPP
+
+class RelativeDisplacementOutOfRange : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+class InPlaceRelocationFailure : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 void require_target_range(LIEF::ELF::Binary& binary, uint64_t address,
                           uint64_t size, bool executable) {
@@ -103,7 +114,7 @@ int64_t checked_relative_displacement(uint64_t target, uint64_t next_instruction
     const uint64_t positive_limit = (uint64_t{1} << (encoded_size * 8 - 1)) - 1;
     const uint64_t negative_limit = positive_limit + 1;
     auto out_of_range = [&]() {
-        return std::runtime_error(
+        return RelativeDisplacementOutOfRange(
             "Relocated branch is out of range: target " + decimal_to_hex(target) +
             ", next instruction " + decimal_to_hex(next_instruction) +
             ", displacement size " + std::to_string(encoded_size) + " byte(s)");
@@ -335,6 +346,164 @@ void relocate_existing_target_references(
     }
 }
 
+// The C runtime passes main as the first argument to __libc_start_main.
+// This is usually a MOV EDI, imm32 in ET_EXEC or LEA RDI, [RIP+disp32]
+// in ET_DYN, neither of which is a direct call to main. Identify the actual
+// startup call through its dynamic relocation before changing that argument.
+std::set<uint64_t> relocate_startup_main_argument(
+    csh handle, const LIEF::ELF::Binary& original,
+    LIEF::ELF::Binary& output, const FunctionMap& functions) {
+    std::set<uint64_t> redirected;
+    std::map<uint64_t, uint64_t> fixed_functions;
+    for (const Function* function : functions.get_functions()) {
+        if (function->operation == OperationType::Fix)
+            fixed_functions[function->target_address] = function->new_address;
+    }
+    if (fixed_functions.empty()) return redirected;
+
+    std::set<uint64_t> libc_start_main_got;
+    for (const auto& relocation : original.relocations()) {
+        const LIEF::ELF::Symbol* symbol = relocation.symbol();
+        if (symbol && symbol->name().rfind("__libc_start_main", 0) == 0)
+            libc_start_main_got.insert(relocation.address());
+    }
+    if (libc_start_main_got.empty()) return redirected;
+
+    const uint64_t entry = original.entrypoint();
+    const LIEF::ELF::Section* source =
+        original.section_from_virtual_address(entry);
+    if (!source || !source->has(LIEF::ELF::Section::FLAGS::EXECINSTR) ||
+        entry < source->virtual_address() ||
+        entry - source->virtual_address() >= source->size())
+        return redirected;
+    const size_t available = static_cast<size_t>(std::min<uint64_t>(
+        128, source->size() - (entry - source->virtual_address())));
+    auto content = original.get_content_from_virtual_address(entry, available);
+    cs_insn* instructions = nullptr;
+    const size_t count = cs_disasm(handle, content.data(), content.size(),
+                                   entry, 0, &instructions);
+    try {
+        for (size_t index = 1; index < count; ++index) {
+            const cs_insn& call = instructions[index];
+            if (!call.detail ||
+                !cs_insn_group(handle, &call, CS_GRP_CALL) ||
+                call.detail->x86.op_count == 0)
+                continue;
+
+            uint64_t got_address = 0;
+            const cs_x86_op& call_operand = call.detail->x86.operands[0];
+            if (call_operand.type == X86_OP_MEM &&
+                call_operand.mem.base == X86_REG_RIP) {
+                got_address = call.address + call.size + call_operand.mem.disp;
+            } else if (call_operand.type == X86_OP_IMM) {
+                // Some CRTs call a PLT stub instead of calling through the
+                // GOT directly. Its first instruction jumps through the GOT.
+                const uint64_t stub = call_operand.imm;
+                const LIEF::ELF::Section* stub_section =
+                    original.section_from_virtual_address(stub);
+                if (stub_section && stub_section->name().rfind(".plt", 0) == 0 &&
+                    stub >= stub_section->virtual_address() &&
+                    stub - stub_section->virtual_address() < stub_section->size()) {
+                    const size_t stub_size = static_cast<size_t>(std::min<uint64_t>(
+                        16, stub_section->size() -
+                                (stub - stub_section->virtual_address())));
+                    auto stub_bytes = original.get_content_from_virtual_address(
+                        stub, stub_size);
+                    cs_insn* stub_instruction = nullptr;
+                    const size_t stub_count = cs_disasm(
+                        handle, stub_bytes.data(), stub_bytes.size(),
+                        stub, 1, &stub_instruction);
+                    if (stub_count == 1 && stub_instruction[0].detail &&
+                        cs_insn_group(handle, &stub_instruction[0], CS_GRP_JUMP) &&
+                        stub_instruction[0].detail->x86.op_count > 0) {
+                        const cs_x86_op& operand =
+                            stub_instruction[0].detail->x86.operands[0];
+                        if (operand.type == X86_OP_MEM &&
+                            operand.mem.base == X86_REG_RIP)
+                            got_address = stub_instruction[0].address +
+                                          stub_instruction[0].size +
+                                          operand.mem.disp;
+                    }
+                    cs_free(stub_instruction, stub_count);
+                }
+            }
+            if (!libc_start_main_got.count(got_address)) continue;
+
+            const cs_insn& loader = instructions[index - 1];
+            if (!loader.detail || loader.address + loader.size != call.address ||
+                loader.detail->x86.op_count < 2)
+                continue;
+            const cs_x86& x86 = loader.detail->x86;
+            const cs_x86_op& destination = x86.operands[0];
+            const cs_x86_op& value = x86.operands[1];
+            if (destination.type != X86_OP_REG ||
+                (destination.reg != X86_REG_RDI &&
+                 destination.reg != X86_REG_EDI))
+                continue;
+
+            const bool rip_lea = loader.id == X86_INS_LEA &&
+                destination.reg == X86_REG_RDI &&
+                value.type == X86_OP_MEM && value.mem.base == X86_REG_RIP;
+            const bool immediate_mov =
+                (std::string(loader.mnemonic) == "mov" ||
+                 std::string(loader.mnemonic) == "movabs") &&
+                value.type == X86_OP_IMM;
+            if (!rip_lea && !immediate_mov) continue;
+            const uint64_t original_main = rip_lea
+                ? loader.address + loader.size + value.mem.disp
+                : destination.reg == X86_REG_EDI
+                    ? static_cast<uint64_t>(static_cast<uint32_t>(value.imm))
+                    : static_cast<uint64_t>(value.imm);
+            auto replacement = fixed_functions.find(original_main);
+            if (replacement == fixed_functions.end()) continue;
+
+            LIEF::ELF::Section* destination_section =
+                output.get_section(source->name());
+            if (!destination_section ||
+                destination_section->size() < source->size())
+                throw std::runtime_error("Startup section could not be mapped");
+            const uint64_t output_address = relocated_instruction_address(
+                loader.address, source->virtual_address(),
+                destination_section->virtual_address(), loader.size);
+            std::vector<uint8_t> bytes(loader.bytes,
+                                       loader.bytes + loader.size);
+            if (rip_lea) {
+                patch_reference(handle, output, bytes, loader.address,
+                                source->virtual_address(),
+                                destination_section->virtual_address(),
+                                replacement->second, false);
+            } else {
+                const size_t offset = x86.encoding.imm_offset;
+                const size_t width = x86.encoding.imm_size;
+                if (!offset || offset > bytes.size() ||
+                    width > bytes.size() - offset ||
+                    (width != 4 && width != 8))
+                    throw std::runtime_error("Unsupported main startup operand");
+                uint64_t encoded = replacement->second;
+                if (width == 4 && destination.reg == X86_REG_EDI &&
+                    encoded > UINT32_MAX)
+                    throw std::runtime_error("Replacement main does not fit startup MOV");
+                if (width == 4 && destination.reg == X86_REG_RDI &&
+                    encoded > INT32_MAX &&
+                    encoded < UINT64_MAX - static_cast<uint64_t>(INT32_MAX))
+                    throw std::runtime_error("Replacement main does not fit startup MOV");
+                for (size_t byte = 0; byte < width; ++byte) {
+                    bytes[offset + byte] = static_cast<uint8_t>(encoded);
+                    encoded >>= 8;
+                }
+                output.patch_address(output_address, bytes);
+            }
+            redirected.insert(original_main);
+            break;
+        }
+    } catch (...) {
+        cs_free(instructions, count);
+        throw;
+    }
+    cs_free(instructions, count);
+    return redirected;
+}
+
 void relocate(const std::string& patch_binary_path, const std::string& target_binary_path, const std::string& output_binary_path,
                 GlobalVarMap& global_var_map, FunctionMap& function_map,
                 std::string new_section_indicator, bool allow_unverified_targets = false) {
@@ -362,7 +531,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
     }
 
     // Map content of .got section if exists
-    if (patch_binary->has_section(".got")) {
+    if (output_binary->has_section(".got." + new_section_indicator)) {
         LIEF::ELF::Section* new_got_section = require_section(*output_binary, ".got." + new_section_indicator);
         uint64_t new_got_section_address = new_got_section->virtual_address();
 
@@ -416,7 +585,7 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
     }
 
     // Relocate content of .plt.sec section if exists
-    if (patch_binary->has_section(".plt.sec")) {
+    if (output_binary->has_section(".plt.sec." + new_section_indicator)) {
         LIEF::ELF::Section* pltsec_section = patch_binary->get_section(".plt.sec");
         LIEF::ELF::Section* patched_pltsec_section = require_section(*output_binary, ".plt.sec." + new_section_indicator);
 
@@ -478,17 +647,34 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
 
     // Find new address of functions
     for (auto& function : function_map.get_functions()) {
-        if (function->operation != OperationType::Ref) {
+        if (function->in_place || function->operation == OperationType::Ref) {
+            function->new_address = translate_target(function->target_address);
+        } else {
             uint64_t new_text_section_address = require_section(*output_binary, ".text." + new_section_indicator)->virtual_address();
             function->new_address += new_text_section_address;
-        }
-        else {
-            function->new_address = translate_target(function->target_address);
         }
     }
 
     relocate_existing_target_references(handle, *target_binary, *output_binary,
                                         function_map);
+    const std::set<uint64_t> redirected_startup_main =
+        relocate_startup_main_argument(handle, *target_binary, *output_binary,
+                                       function_map);
+
+    // Install only after original code references have been rebased. Otherwise
+    // that pass could restore a stale instruction over the replacement.
+    for (const Function* function : function_map.get_functions()) {
+        if (!function->in_place) continue;
+        require_target_range(*output_binary, function->new_address,
+                             function->target_size, true);
+        auto code = patch_binary->get_content_from_virtual_address(
+            function->patch_address, function->size);
+        if (code.size() != function->size)
+            throw std::runtime_error("In-place patch code is incomplete");
+        std::vector<uint8_t> replacement(code.begin(), code.end());
+        replacement.resize(function->target_size, 0x90);
+        output_binary->patch_address(function->new_address, replacement);
+    }
 
     // Find new address of global variables
     for (auto& global_var : global_var_map.get_global_vars()) {
@@ -527,6 +713,30 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                     }
 
                     uint64_t element_value = vector_to_int(std::vector<uint8_t>(element_content.begin(), element_content.end()));
+
+                    // A patch data pointer may point at a function placed in
+                    // the original text section rather than in a new one.
+                    Function* pointed_function = function_map.find_function(element_value);
+                    if (pointed_function) {
+                        std::vector<uint8_t> new_element_content;
+                        uint64_t value = pointed_function->new_address;
+                        for (size_t i = 0; i < sizeof(value); ++i) {
+                            new_element_content.push_back(static_cast<uint8_t>(value));
+                            value >>= 8;
+                        }
+                        LIEF::ELF::Section* address_section =
+                            patch_binary->section_from_virtual_address(element_address);
+                        if (!address_section) break;
+                        LIEF::ELF::Section* mapped_section = output_binary->get_section(
+                            address_section->name() + "." + new_section_indicator);
+                        if (!mapped_section) break;
+                        uint64_t mapped_address = element_address -
+                            address_section->virtual_address() +
+                            mapped_section->virtual_address();
+                        output_binary->patch_address(mapped_address, new_element_content);
+                        element_address = pointed_function->new_address;
+                        continue;
+                    }
 
                     // Get original section from element value
                     LIEF::ELF::Section* assoc_section_value = patch_binary->section_from_virtual_address(element_value);
@@ -604,6 +814,22 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
     
     // Relocate functions
     for (auto& function : function_map.get_functions()) {
+        auto relocate_function_reference = [&](const std::vector<uint8_t>& bytes,
+                                               const Reference* reference,
+                                               uint64_t destination,
+                                               bool direct_branch,
+                                               bool destination_in_place) {
+            try {
+                patch_reference(handle, *output_binary, bytes, reference->address,
+                                function->patch_address, function->new_address,
+                                destination, direct_branch);
+            } catch (const RelativeDisplacementOutOfRange&) {
+                if (function->in_place || destination_in_place)
+                    throw InPlaceRelocationFailure(
+                        "In-place reference is out of range");
+                throw;
+            }
+        };
         // Relocate references from patched functions
         if (function->operation != OperationType::Ref) {
             for (auto& reference : function->reference_table->get_references()) {
@@ -614,9 +840,9 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                     if (ref_global_var) {
                         auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
                         std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
-                        patch_reference(handle, *output_binary, instruction_bytes, reference->address,
-                                        function->patch_address, function->new_address,
-                                        ref_global_var->new_address, false);
+                        relocate_function_reference(instruction_bytes, reference,
+                                                    ref_global_var->new_address,
+                                                    false, false);
                         
                     } else {
                         // Check if it is referencing read-only data
@@ -627,9 +853,9 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                             auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
                             std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
 
-                            patch_reference(handle, *output_binary, instruction_bytes, reference->address,
-                                            function->patch_address, function->new_address,
-                                            new_rodata_variable_address, false);
+                            relocate_function_reference(instruction_bytes, reference,
+                                                        new_rodata_variable_address,
+                                                        false, false);
                             continue;
                         }
                         throw std::runtime_error("Unresolved patch global reference at " +
@@ -652,9 +878,8 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                         auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
                         std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
 
-                        patch_reference(handle, *output_binary, instruction_bytes, reference->address,
-                                        function->patch_address, function->new_address,
-                                        new_pltsec_address, true);
+                        relocate_function_reference(instruction_bytes, reference,
+                                                    new_pltsec_address, true, false);
                         continue;
                     }
 
@@ -663,9 +888,9 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                         auto instruction_content = patch_binary->get_content_from_virtual_address(reference->address, reference->size);
                         std::vector<uint8_t> instruction_bytes(instruction_content.begin(), instruction_content.end());
 
-                        patch_reference(handle, *output_binary, instruction_bytes, reference->address,
-                                        function->patch_address, function->new_address,
-                                        ref_function->new_address, true);
+                        relocate_function_reference(instruction_bytes, reference,
+                                                    ref_function->new_address, true,
+                                                    ref_function->in_place);
                     
                     } else {
                         throw std::runtime_error("Unresolved patch function reference at " +
@@ -677,6 +902,11 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
 
         // Leave the original address usable by direct and indirect callers.
         if (function->operation == OperationType::Fix) {
+            if (function->in_place) {
+                verbose_print::print_green("Replaced function in place at " +
+                    decimal_to_hex(function->target_address));
+                continue;
+            }
             const uint64_t original_entry = translate_target(function->target_address);
             require_target_range(*output_binary, original_entry, 1, true);
             LIEF::ELF::Section* target_section = output_binary->section_from_virtual_address(original_entry);
@@ -693,6 +923,16 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                 prefix[2] == 0x1E && prefix[3] == 0xFA ? 4 : 0;
 
             auto skip_short_entry = [&]() {
+                if (!redirected_startup_main.count(function->target_address)) {
+                    for (const auto& symbol : target_binary->symbols()) {
+                        if (symbol.is_function() && symbol.name() == "main" &&
+                            symbol.value() == function->target_address) {
+                            throw std::runtime_error(
+                                "Cannot redirect main: startup argument was not rewritten "
+                                "and its entry cannot hold a jump");
+                        }
+                    }
+                }
                 std::cerr << "Skipping fix_ at " << decimal_to_hex(function->target_address)
                           << ": insufficient space for an entry jump\n";
             };
@@ -766,6 +1006,13 @@ void relocate(const std::string& patch_binary_path, const std::string& target_bi
                                         jump_address + new_instruction_bytes.size());
             new_instruction_bytes.resize(covered, 0x90);
             output_binary->patch_address(jump_address, new_instruction_bytes);
+            if (function->target_size > occupied) {
+                const uint64_t tail = original_entry + occupied;
+                require_target_range(*output_binary, tail,
+                                     function->target_size - occupied, true);
+                output_binary->patch_address(
+                    tail, std::vector<uint8_t>(function->target_size - occupied, 0x90));
+            }
         } 
 
         verbose_print::print_green("Relocated function at " + decimal_to_hex(function->patch_address) + " of patch binary");       

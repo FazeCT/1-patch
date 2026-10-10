@@ -63,6 +63,16 @@ and pass its containing directory as `-DLIEF_DIR=<dir_here>`.
 
 Refer to [the documentation here](https://blog.fazect.com/projects/1-patch/#documentation).
 
+### Function placement
+
+When a `fix_` function fits inside a verified original function body, 1-patch
+replaces it at the original address and fills the unused bytes with NOPs. This
+also covers direct and indirect calls to that address. If the replacement does
+not fit, 1-patch creates a new code section and redirects calls as before. It
+NOPs the unused old body only when it can verify the function extent and finds
+no known entries into its interior. Binaries with unknown computed interior
+jumps or nonstandard unwind metadata need separate review before patching.
+
 ## Extra Information
 
 This work was my Computer Science Bachelor's thesis in Ho Chi Minh City University of Technology (late 2024).

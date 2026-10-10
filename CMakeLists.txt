@@ -112,6 +112,9 @@ if(BUILD_TESTING)
     add_test(NAME patcher
         COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/patcher.sh" $<TARGET_FILE:1-patch>)
     set_tests_properties(patcher PROPERTIES TIMEOUT 90)
+    add_test(NAME placement
+        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/placement.sh" $<TARGET_FILE:1-patch>)
+    set_tests_properties(placement PROPERTIES TIMEOUT 90)
     add_test(NAME objdump
         COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/objdump.sh"
             $<TARGET_FILE:1-patch>

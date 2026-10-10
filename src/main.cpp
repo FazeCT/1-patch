@@ -10,6 +10,7 @@
 #include "utils.hpp"
 #include "compiler.hpp"
 #include "patch_parser.hpp"
+#include "placement.hpp"
 #include "merger.hpp"
 #include "relocator.hpp"
 
@@ -136,7 +137,8 @@ int main(int argc, char* argv[]) {
 
     try {
         new_section_indicator = merge_binary(patch_binary_path, target_binary_path,
-                                             staged_output->working_path(), global_var_map, function_map);
+                                             staged_output->working_path(), global_var_map,
+                                             function_map, true);
     } catch (const std::exception& e) {
         std::cerr << "1-patch: " << e.what() << '\n';
         return 1;
@@ -145,9 +147,20 @@ int main(int argc, char* argv[]) {
     verbose_print::print_module("Relocate");
 
     try {
-        relocate(patch_binary_path, target_binary_path, staged_output->working_path(),
-                 global_var_map, function_map, new_section_indicator,
-                 allow_unverified_targets);
+        try {
+            relocate(patch_binary_path, target_binary_path, staged_output->working_path(),
+                     global_var_map, function_map, new_section_indicator,
+                     allow_unverified_targets);
+        } catch (const InPlaceRelocationFailure&) {
+            // A RIP-relative operand can become unreachable when the patch is
+            // placed in the old text segment. Retry with normal new sections.
+            new_section_indicator = merge_binary(
+                patch_binary_path, target_binary_path, staged_output->working_path(),
+                global_var_map, function_map, false);
+            relocate(patch_binary_path, target_binary_path, staged_output->working_path(),
+                     global_var_map, function_map, new_section_indicator,
+                     allow_unverified_targets);
+        }
         staged_output->commit(target_binary_path);
     } catch (const std::exception& e) {
         std::cerr << "1-patch: " << e.what() << '\n';

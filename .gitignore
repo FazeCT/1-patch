@@ -4,3 +4,5 @@ build-linux/
 .vscode/
 242_ĐATN_417_2152184.pdf
 *_patched
+__pycache__/
+*.pyc

@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <vector>
 
-#include "../src/compiler.hpp"
+#include "../../src/compiler.hpp"
 
 namespace fs = std::filesystem;
 
@@ -61,6 +61,23 @@ int main() {
             require((info.st_mode & 0777) == 0700, "build directory is not private");
         }
         require(!fs::exists(test_root / "marker"), "patch filename executed shell syntax");
+        require_no_build_directories(temp_root);
+
+        const fs::path cpp_without_main = test_root / "C++ patch.cpp";
+        write_file(test_root / "patch_types.hpp",
+                   "struct PatchValue { int value; };\n");
+        write_file(cpp_without_main,
+                   "#include \"patch_types.hpp\"\n"
+                   "namespace patch { constexpr int bonus = 2; }\n"
+                   "extern \"C\" int fix_0x1234(PatchValue value) { "
+                   "return value.value + patch::bonus; }\n");
+        {
+            CompiledPatch patch = compile(cpp_without_main.string());
+            require(patch.language() == PatchLanguage::Cpp,
+                    "C++ source used the C compiler");
+            require(fs::exists(patch.binary_path()),
+                    "C++ missing-main retry failed");
+        }
         require_no_build_directories(temp_root);
 
         write_file(test_root / "-patch.c", "int main(void) { return 0; }\n");

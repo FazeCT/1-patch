@@ -127,3 +127,29 @@ EOF
     test "$result" -eq 7
 done
 
+# Exempt only the startup instruction rewritten above. A second address-taken
+# reference to the same short main still makes the output incomplete.
+cat > main-pointer.c <<'EOF'
+extern int main(void);
+int (*saved_main)(void) = main;
+EOF
+for kind in exec pie; do
+    case "$kind" in
+        exec) gcc -no-pie -fcf-protection=none -g startup-main.S main-pointer.c -o "pointer-$kind" ;;
+        pie) gcc -fPIE -pie -fcf-protection=none -g startup-main.S main-pointer.c -o "pointer-$kind" ;;
+    esac
+    address=$(nm -n "pointer-$kind" |
+        awk '$3 == "main" { print $1; exit }')
+    test -n "$address"
+    cat > "pointer-$kind-patch.c" <<EOF
+int fix_0x${address}_main(void) { return 7; }
+EOF
+    if "$patcher" -p "pointer-$kind-patch.c" -i "pointer-$kind" \
+        -o "pointer-$kind-patched" 2> "pointer-$kind.log"; then
+        echo "$kind short main with saved pointer unexpectedly succeeded" >&2
+        exit 1
+    fi
+    grep -q 'indirect callers retain the original entry' "pointer-$kind.log"
+    test ! -e "pointer-$kind-patched"
+done
+

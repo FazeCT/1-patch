@@ -100,36 +100,49 @@ target_link_libraries(1-patch PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(compiler tests/compiler.cpp)
-    target_include_directories(compiler PRIVATE
+    add_executable(general_compiler tests/general/compiler.cpp)
+    target_include_directories(general_compiler PRIVATE
         "${LIBDWARF_INCLUDE_ROOT}"
         "${LIBDWARF_INCLUDE_ROOT}/libdwarf")
-    target_link_libraries(compiler PRIVATE
+    target_link_libraries(general_compiler PRIVATE
         patch_capstone patch_keystone "${LIBDWARF_LIBRARY}"
         ZLIB::ZLIB "${LIBELF_LIBRARY}" Threads::Threads m)
-    add_test(NAME compiler COMMAND compiler)
-    set_tests_properties(compiler PROPERTIES TIMEOUT 60)
-    add_test(NAME patcher
-        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/patcher.sh" $<TARGET_FILE:1-patch>)
-    set_tests_properties(patcher PROPERTIES TIMEOUT 90)
-    add_test(NAME placement
-        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/placement.sh" $<TARGET_FILE:1-patch>)
-    set_tests_properties(placement PROPERTIES TIMEOUT 90)
-    add_test(NAME got_reuse
-        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/got_reuse.sh" $<TARGET_FILE:1-patch>)
-    set_tests_properties(got_reuse PROPERTIES TIMEOUT 90)
-    add_test(NAME objdump
-        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/objdump.sh"
+    add_test(NAME general_compiler COMMAND general_compiler)
+    set_tests_properties(general_compiler PROPERTIES TIMEOUT 60)
+
+    foreach(general_case IN ITEMS patcher placement got_reuse)
+        add_test(NAME general_${general_case}
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/general/${general_case}.sh" $<TARGET_FILE:1-patch>)
+        set_tests_properties(general_${general_case} PROPERTIES TIMEOUT 90)
+    endforeach()
+
+    foreach(cpp_case IN ITEMS patcher virtual adjustor abi runtime runtime_abi
+            runtime_refs runtime_tls runtime_variables)
+        add_test(NAME cpp_${cpp_case}
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/${cpp_case}.sh" $<TARGET_FILE:1-patch>)
+        set_tests_properties(cpp_${cpp_case} PROPERTIES TIMEOUT 90)
+    endforeach()
+    foreach(runtime_case IN ITEMS constructor original objects tls_fix tls_objects)
+        add_test(NAME cpp_runtime_${runtime_case}
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/runtime_${runtime_case}.sh" $<TARGET_FILE:1-patch>)
+        set_tests_properties(cpp_runtime_${runtime_case} PROPERTIES TIMEOUT 120)
+    endforeach()
+    add_test(NAME cpp_build_options
+        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/build_options.sh" $<TARGET_FILE:1-patch>)
+    set_tests_properties(cpp_build_options PROPERTIES TIMEOUT 180)
+
+    add_test(NAME c_objdump
+        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/c/objdump.sh"
             $<TARGET_FILE:1-patch>
             "${CMAKE_CURRENT_SOURCE_DIR}/examples/objdump/objdump"
             "${CMAKE_CURRENT_SOURCE_DIR}/examples/objdump/objdump_patch.c")
-    set_tests_properties(objdump PROPERTIES TIMEOUT 180)
+    set_tests_properties(c_objdump PROPERTIES TIMEOUT 180)
 
     foreach(example IN ITEMS aura blind_test fmtstr heap_1 ld merger rao)
-        add_test(NAME ${example}
-            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/${example}.sh"
+        add_test(NAME c_${example}
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/c/${example}.sh"
                 $<TARGET_FILE:1-patch> "${CMAKE_CURRENT_SOURCE_DIR}")
-        set_tests_properties(${example} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+        set_tests_properties(c_${example} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
     endforeach()
 
 endif()

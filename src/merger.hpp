@@ -5,6 +5,7 @@
 #include <LIEF/LIEF.hpp>
 
 #include "got_reuse.hpp"
+#include "original_trampoline.hpp"
 
 #ifndef MERGER_HPP
 #define MERGER_HPP
@@ -14,14 +15,18 @@ std::vector<std::string> get_shared_libraries(const std::string& binary_path) {
     std::vector<std::string> libraries;
 
     std::unique_ptr<LIEF::ELF::Binary> binary = LIEF::ELF::Parser::parse(binary_path);
+
     if (!binary) {
         verbose_print::print_red("Failed to parse binary: " + binary_path);
+
         return libraries;
     }
 
     LIEF::ELF::Section* dynamic_string_section = binary->get_section(".dynstr");
+
     if (!dynamic_string_section) {
         verbose_print::print_red("Failed to find .dynstr section in " + binary_path);
+
         return libraries;
     }
 
@@ -30,27 +35,29 @@ std::vector<std::string> get_shared_libraries(const std::string& binary_path) {
     for (const auto& entry : binary->dynamic_entries()) {
         if (entry.tag() == LIEF::ELF::DynamicEntry::TAG::NEEDED) {
             auto library_offset = entry.value();
+
             if (library_offset < dynamic_strings.size()) {
                 std::string library_name;
+
                 for (size_t i = library_offset; i < dynamic_strings.size(); ++i) {
                     if (dynamic_strings[i] == '\0') {
                         break;
                     }
+
                     library_name += static_cast<char>(dynamic_strings[i]);
                 }
+
                 if (!library_name.empty()) {
                     libraries.push_back(library_name);
                 }
-            }   
+            }
         }
     }
 
     return libraries;
 }
 
-std::string merge_binary(const std::string& patch_binary_path, const std::string& target_binary_path, const std::string& output_binary_path,
-                    GlobalVarMap& global_var_map, FunctionMap& function_map,
-                    bool enable_in_place = true) {
+std::string merge_binary(const std::string& patch_binary_path, const std::string& target_binary_path, const std::string& output_binary_path, GlobalVarMap& global_var_map, FunctionMap& function_map, bool enable_in_place = true, std::unique_ptr<LIEF::ELF::Binary>* prepared_output = nullptr, const std::vector<RuntimeReference>& runtime_references = {}) {
 
     std::string random_string = generate_random_string();
 
@@ -61,9 +68,10 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
         throw std::runtime_error("Merge failed");
     }
 
-    int original_stderr = dup(STDERR_FILENO); 
+    int original_stderr = dup(STDERR_FILENO);
+
     freopen("/dev/null", "w", stderr);
-    
+
     std::unique_ptr<LIEF::ELF::Binary> target_binary = LIEF::ELF::Parser::parse(target_binary_path);
 
     fflush(stderr);
@@ -77,22 +85,37 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
 
     plan_function_placement(*target_binary, function_map, enable_in_place);
 
+    const auto originals = plan_original_trampolines(*target_binary, runtime_references);
+
+    for (auto* function : function_map.get_functions()) {
+        for (const auto& original : originals) {
+            if (function->target_address == original.target_address)
+                function->in_place = false;
+        }
+    }
+
     bool needs_plt = false;
     bool needs_rodata = false;
     bool needs_text = false;
+
     for (const Function* function : function_map.get_functions()) {
-        if (function->operation == OperationType::Ref) continue;
+        if (function->operation == OperationType::Ref)
+            continue;
+
         needs_text |= !function->in_place;
+
         for (const Reference* reference : function->reference_table->get_references()) {
             const LIEF::ELF::Section* source = patch_binary->section_from_virtual_address(
                 reference->reference_address);
-            if (!source) continue;
+
+            if (!source)
+                continue;
+
             needs_plt |= source->name() == ".plt.sec";
             needs_rodata |= source->name() == ".rodata";
         }
     }
-    // Pointer initializers in patch data can also depend on the copied PLT
-    // and read-only data even when no patch function refers to them directly.
+
     if (!global_var_map.get_global_vars().empty()) {
         needs_plt |= patch_binary->has_section(".plt.sec");
         needs_rodata |= patch_binary->has_section(".rodata");
@@ -115,14 +138,15 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
     }
 
     // Add .got section
-    if (patch_binary->has_section(".got") &&
-        (needs_plt || !global_var_map.get_global_vars().empty())) {
+    if (patch_binary->has_section(".got") && (needs_plt || !global_var_map.get_global_vars().empty())) {
         const auto reused = reusable_got_entries(*patch_binary, *target_binary);
         size_t new_slot_count = 0;
 
         for (const LIEF::ELF::Relocation& rel : patch_binary->pltgot_relocations()) {
             const LIEF::ELF::Symbol* symbol = rel.symbol();
-            if (symbol && reused.count(rel.address()) == 0) ++new_slot_count;
+
+            if (symbol && reused.count(rel.address()) == 0)
+                ++new_slot_count;
         }
 
         if (new_slot_count != 0) {
@@ -160,7 +184,7 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
 
         verbose_print::print_green("Added .plt.sec to target binary");
     }
-    
+
     // Add .rodata section
     if (patch_binary->has_section(".rodata") && needs_rodata) {
         LIEF::ELF::Section* rodata_section = patch_binary->get_section(".rodata");
@@ -213,7 +237,9 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
         for (auto& function : function_map.get_functions()) {
             if (function->operation == OperationType::Ref || function->in_place)
                 continue;
+
             auto function_code = patch_binary->get_content_from_virtual_address(function->patch_address, function->size);
+
             function->new_address = new_text_section_content.size();
             new_text_section_content.insert(new_text_section_content.end(), function_code.begin(), function_code.end());
         }
@@ -224,8 +250,24 @@ std::string merge_binary(const std::string& patch_binary_path, const std::string
 
         verbose_print::print_green("Added .text to target binary");
     }
-    
-    target_binary->write(output_binary_path);
+
+    if (!originals.empty()) {
+        LIEF::ELF::Section section(".text.original." + random_string);
+
+        section.type(LIEF::ELF::Section::TYPE::PROGBITS);
+        section.flags(uint64_t(LIEF::ELF::Section::FLAGS::ALLOC) |
+                      uint64_t(LIEF::ELF::Section::FLAGS::EXECINSTR));
+        section.alignment(16);
+        section.content(std::vector<uint8_t>(originals.back().storage_offset + originals.back().size(), 0));
+        target_binary->add(section);
+    }
+
+    if (prepared_output) {
+        *prepared_output = std::move(target_binary);
+    } else {
+        target_binary->write(output_binary_path);
+    }
+
     return random_string;
 }
 

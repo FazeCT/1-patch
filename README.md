@@ -3,7 +3,7 @@ A static binary patcher using patches in high-level programming languages.
 
 ## Introduction
 
-[1-patch](https://github.com/FazeCT/1-patch) is a static binary patcher that demonstrates the usage of patches written in high-level programming languages in patching binaries. Currently, it supports C, and works with patching x86-64 ELF binaries. 
+[1-patch](https://github.com/FazeCT/1-patch) is a static binary patcher that demonstrates the usage of patches written in high-level programming languages in patching binaries. Currently, it supports C/C++, and works with patching x86-64 ELF binaries. 
 
 ### Install dependencies
 

@@ -9,12 +9,13 @@
 
 void parse_target_binary(const std::string& target_binary_path, ReferenceMap& reference_map) {
     std::unique_ptr<LIEF::ELF::Binary> target_binary = LIEF::ELF::Parser::parse(target_binary_path);
+
     if (!target_binary) {
         verbose_print::print_red("Failed to parse target binary: " + target_binary_path);
         throw std::runtime_error("Target parser failed");
     }
 
-    for (const auto& section: target_binary->sections()) {
+    for (const auto& section : target_binary->sections()) {
         if (section.has(LIEF::ELF::Section::FLAGS::EXECINSTR)) {
             auto section_code = target_binary->get_content_from_virtual_address(section.virtual_address(), section.size());
 
